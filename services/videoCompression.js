@@ -13,8 +13,6 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
  * @returns {Promise<Object>} 압축 결과
  */
 async function compressVideo(inputPath, targetSizeKB) {
-  const startTime = Date.now(); // 시작 시간 기록
-  
   try {
     const outputDir = path.join(__dirname, '..', 'output');
     await fs.ensureDir(outputDir);
@@ -28,8 +26,6 @@ async function compressVideo(inputPath, targetSizeKB) {
       const outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
-      const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
-      
       return {
         success: true,
         message: `영상이 이미 목표 용량(${targetSizeKB}KB) 이하입니다.`,
@@ -37,8 +33,6 @@ async function compressVideo(inputPath, targetSizeKB) {
         compressedSize: parseFloat(originalSizeKB),
         compressionRatio: 0,
         outputPath: `/output/${path.basename(outputPath)}`,
-        executionTime: parseFloat(executionTime),
-        executionTimeFormatted: `${executionTime}초`,
         action: 'copied'
       };
     }
@@ -59,9 +53,9 @@ async function compressVideo(inputPath, targetSizeKB) {
         .outputOptions([
           '-c:v libx264',
           '-c:a aac',
-          '-preset ultrafast',  // fast -> ultrafast로 변경 (속도 최적화)
-          '-threads 0',  // 모든 CPU 코어 활용
+          '-preset ultrafast',
           '-crf 23',
+          '-threads 0',  // 모든 사용 가능한 CPU 스레드 사용
           '-maxrate ' + targetBitrate + 'k',
           '-bufsize ' + (targetBitrate * 2) + 'k',
           '-movflags +faststart'
@@ -89,7 +83,6 @@ async function compressVideo(inputPath, targetSizeKB) {
     const compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
     
     const compressionRatio = ((parseFloat(originalSizeKB) - parseFloat(compressedSizeKB)) / parseFloat(originalSizeKB) * 100).toFixed(1);
-    const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
     
     return {
       success: true,
@@ -101,26 +94,11 @@ async function compressVideo(inputPath, targetSizeKB) {
       resolution: videoInfo.resolution,
       bitrate: targetBitrate,
       outputPath: `/output/${path.basename(outputPath)}`,
-      executionTime: parseFloat(executionTime),
-      executionTimeFormatted: `${executionTime}초`,
       action: 'compressed'
     };
     
   } catch (error) {
     console.error('영상 압축 오류:', error);
-    
-    // 에러 발생 시 생성된 파일들 정리
-    try {
-      const outputFiles = await fs.readdir(outputDir);
-      for (const file of outputFiles) {
-        if (file.includes('compressed_') && file.includes(path.basename(inputPath, path.extname(inputPath)))) {
-          await fs.remove(path.join(outputDir, file));
-        }
-      }
-    } catch (cleanupError) {
-      console.error('정리 중 오류:', cleanupError);
-    }
-    
     throw new Error(`영상 압축 실패: ${error.message}`);
   }
 }
@@ -132,8 +110,6 @@ async function compressVideo(inputPath, targetSizeKB) {
  * @returns {Promise<Object>} 분할 결과
  */
 async function splitVideo(inputPath, targetSizeKB) {
-  const startTime = Date.now(); // 시작 시간 기록
-  
   try {
     const outputDir = path.join(__dirname, '..', 'output');
     await fs.ensureDir(outputDir);
@@ -150,8 +126,6 @@ async function splitVideo(inputPath, targetSizeKB) {
       const outputPath = path.join(outputDir, `split_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
-      const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
-      
       return {
         success: true,
         message: `영상이 이미 목표 용량(${targetSizeKB}KB) 이하입니다.`,
@@ -163,8 +137,6 @@ async function splitVideo(inputPath, targetSizeKB) {
           duration: videoInfo.duration,
           outputPath: `/output/${path.basename(outputPath)}`
         }],
-        executionTime: parseFloat(executionTime),
-        executionTimeFormatted: `${executionTime}초`,
         action: 'copied'
       };
     }
@@ -176,19 +148,13 @@ async function splitVideo(inputPath, targetSizeKB) {
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
     
-    // 병렬 처리를 위한 Promise 배열 생성
+    // 각 구간별로 분할 (병렬 처리)
     const splitPromises = [];
-    const partInfos = [];
-    const baseTimestamp = Date.now(); // 고유한 기본 타임스탬프
-    
     for (let i = 0; i < totalParts; i++) {
       const startTime = i * segmentDuration;
-      const timestamp = baseTimestamp + (i * 1000); // 각 파일마다 1초씩 차이나는 타임스탬프
+      const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
       const outputPath = path.join(outputDir, `split_${timestamp}_${baseFileName}_part${i + 1}.mp4`);
       
-      partInfos.push({ index: i, startTime, outputPath });
-      
-      // 각 파트를 병렬로 처리
       const splitPromise = new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .setStartTime(startTime)
@@ -196,8 +162,8 @@ async function splitVideo(inputPath, targetSizeKB) {
           .outputOptions([
             '-c:v libx264',
             '-c:a aac',
-            '-preset ultrafast',  // fast -> ultrafast로 변경 (속도 최적화)
-            '-threads 0',  // 모든 CPU 코어 활용
+            '-preset ultrafast',
+            '-threads 0',
             '-movflags +faststart'
           ])
           .output(outputPath)
@@ -207,9 +173,19 @@ async function splitVideo(inputPath, targetSizeKB) {
           .on('progress', (progress) => {
             console.log(`파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
           })
-          .on('end', () => {
+          .on('end', async () => {
             console.log(`파트 ${i + 1} 완료`);
-            resolve({ index: i, outputPath });
+            // 분할된 파일 크기 확인
+            const partStats = await fs.stat(outputPath);
+            const partSizeKB = (partStats.size / 1024).toFixed(2);
+            
+            resolve({
+              partNumber: i + 1,
+              size: parseFloat(partSizeKB),
+              duration: segmentDuration,
+              startTime: startTime,
+              outputPath: `/output/${path.basename(outputPath)}`
+            });
           })
           .on('error', (err) => {
             console.error(`파트 ${i + 1} 오류:`, err);
@@ -221,37 +197,9 @@ async function splitVideo(inputPath, targetSizeKB) {
       splitPromises.push(splitPromise);
     }
     
-    // 모든 분할 작업을 병렬로 실행 (최대 4개씩 동시 처리)
-    console.log(`${totalParts}개 파트를 병렬 처리 시작...`);
-    const maxConcurrent = Math.min(4, totalParts); // 최대 4개까지 동시 처리
-    const results = [];
-    
-    for (let i = 0; i < splitPromises.length; i += maxConcurrent) {
-      const batch = splitPromises.slice(i, i + maxConcurrent);
-      const batchResults = await Promise.all(batch);
-      results.push(...batchResults);
-      console.log(`진행: ${Math.min(i + maxConcurrent, totalParts)}/${totalParts} 파트 완료`);
-    }
-    
-    // 결과를 순서대로 정리
-    for (const result of results) {
-      const partInfo = partInfos[result.index];
-      const partStats = await fs.stat(result.outputPath);
-      const partSizeKB = (partStats.size / 1024).toFixed(2);
-      
-      parts.push({
-        partNumber: result.index + 1,
-        size: parseFloat(partSizeKB),
-        duration: segmentDuration,
-        startTime: partInfo.startTime,
-        outputPath: `/output/${path.basename(result.outputPath)}`
-      });
-    }
-    
-    // 파트 번호순으로 정렬
-    parts.sort((a, b) => a.partNumber - b.partNumber);
-    
-    const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    // 모든 분할 작업을 병렬로 실행
+    const results = await Promise.all(splitPromises);
+    parts.push(...results.sort((a, b) => a.partNumber - b.partNumber));
     
     return {
       success: true,
@@ -259,27 +207,11 @@ async function splitVideo(inputPath, targetSizeKB) {
       originalSize: parseFloat(originalSizeKB),
       totalParts: totalParts,
       parts: parts,
-      executionTime: parseFloat(executionTime),
-      executionTimeFormatted: `${executionTime}초`,
       action: 'split'
     };
     
   } catch (error) {
     console.error('영상 분할 오류:', error);
-    
-    // 에러 발생 시 생성된 파일들 정리
-    try {
-      const outputFiles = await fs.readdir(outputDir);
-      const timestamp = Date.now();
-      for (const file of outputFiles) {
-        if (file.includes('split_') && file.includes(path.basename(inputPath, path.extname(inputPath)))) {
-          await fs.remove(path.join(outputDir, file));
-        }
-      }
-    } catch (cleanupError) {
-      console.error('정리 중 오류:', cleanupError);
-    }
-    
     throw new Error(`영상 분할 실패: ${error.message}`);
   }
 }
@@ -317,3 +249,5 @@ module.exports = {
   splitVideo,
   getVideoInfo
 };
+
+

@@ -13,8 +13,6 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
  * @returns {Promise<Object>} 처리 결과
  */
 async function detectWebMQualityChange(inputPath, targetSizeKB) {
-  const startTime = Date.now(); // 시작 시간 기록
-  
   try {
     const outputDir = path.join(__dirname, '..', 'output');
     await fs.ensureDir(outputDir);
@@ -31,8 +29,6 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       const outputPath = path.join(outputDir, `webm_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
-      const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
-      
       return {
         success: true,
         message: `WebM 파일이 이미 목표 용량(${targetSizeKB}KB) 이하입니다.`,
@@ -45,8 +41,6 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           duration: webmInfo.duration,
           outputPath: `/output/${path.basename(outputPath)}`
         }],
-        executionTime: parseFloat(executionTime),
-        executionTimeFormatted: `${executionTime}초`,
         action: 'copied'
       };
     }
@@ -71,22 +65,16 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       });
     }
     
-    // 병렬 처리를 위한 Promise 배열 생성
+    // 각 세그먼트를 개별 파일로 분할
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
-    const splitPromises = [];
-    const segmentInfos = [];
-    const baseTimestamp = Date.now(); // 고유한 기본 타임스탬프
     
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
-      const timestamp = baseTimestamp + (i * 1000); // 각 파일마다 1초씩 차이나는 타임스탬프
+      const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
       const outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
       
-      segmentInfos.push({ index: i, segment, outputPath });
-      
-      // 각 세그먼트를 병렬로 처리
-      const splitPromise = new Promise((resolve, reject) => {
+      const partInfo = await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .setStartTime(segment.startTime)
           .setDuration(segment.duration)
@@ -95,10 +83,11 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
             '-c:a libopus',
             '-b:v 0',
             '-crf 30',
-            '-threads 0',  // 모든 CPU 코어 활용
-            '-speed 4',  // VP9 인코딩 속도 향상 (0-4, 높을수록 빠름)
-            '-tile-columns 6',  // 병렬 처리 개선
-            '-frame-parallel 1'  // 프레임 병렬 처리 활성화
+            '-threads 0',  // 멀티스레딩 활성화
+            '-speed 4',     // 속도 우선 (0-4, 4가 가장 빠름)
+            '-tile-columns 2',
+            '-frame-parallel 1',
+            '-row-mt 1'
           ])
           .output(outputPath)
           .on('start', (cmd) => {
@@ -107,9 +96,21 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           .on('progress', (progress) => {
             console.log(`WebM 파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
           })
-          .on('end', () => {
+          .on('end', async () => {
             console.log(`WebM 파트 ${i + 1} 완료`);
-            resolve({ index: i, outputPath });
+            // 분할된 파일 크기 확인
+            const partStats = await fs.stat(outputPath);
+            const partSizeKB = (partStats.size / 1024).toFixed(2);
+            
+            resolve({
+              partNumber: i + 1,
+              size: parseFloat(partSizeKB),
+              duration: segment.duration,
+              startTime: segment.startTime,
+              endTime: segment.endTime,
+              qualityChange: segment.qualityChange,
+              outputPath: `/output/${path.basename(outputPath)}`
+            });
           })
           .on('error', (err) => {
             console.error(`WebM 파트 ${i + 1} 오류:`, err);
@@ -118,42 +119,8 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           .run();
       });
       
-      splitPromises.push(splitPromise);
+      parts.push(partInfo);
     }
-    
-    // 모든 분할 작업을 병렬로 실행 (최대 4개씩 동시 처리)
-    console.log(`${segments.length}개 WebM 파트를 병렬 처리 시작...`);
-    const maxConcurrent = Math.min(4, segments.length); // 최대 4개까지 동시 처리
-    const results = [];
-    
-    for (let i = 0; i < splitPromises.length; i += maxConcurrent) {
-      const batch = splitPromises.slice(i, i + maxConcurrent);
-      const batchResults = await Promise.all(batch);
-      results.push(...batchResults);
-      console.log(`진행: ${Math.min(i + maxConcurrent, segments.length)}/${segments.length} 파트 완료`);
-    }
-    
-    // 결과를 순서대로 정리
-    for (const result of results) {
-      const segmentInfo = segmentInfos[result.index];
-      const partStats = await fs.stat(result.outputPath);
-      const partSizeKB = (partStats.size / 1024).toFixed(2);
-      
-      parts.push({
-        partNumber: result.index + 1,
-        size: parseFloat(partSizeKB),
-        duration: segmentInfo.segment.duration,
-        startTime: segmentInfo.segment.startTime,
-        endTime: segmentInfo.segment.endTime,
-        qualityChange: segmentInfo.segment.qualityChange,
-        outputPath: `/output/${path.basename(result.outputPath)}`
-      });
-    }
-    
-    // 파트 번호순으로 정렬
-    parts.sort((a, b) => a.partNumber - b.partNumber);
-    
-    const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
     
     return {
       success: true,
@@ -162,26 +129,11 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       totalParts: parts.length,
       qualityChanges: qualityChanges,
       parts: parts,
-      executionTime: parseFloat(executionTime),
-      executionTimeFormatted: `${executionTime}초`,
       action: 'split_with_quality_detection'
     };
     
   } catch (error) {
     console.error('WebM 처리 오류:', error);
-    
-    // 에러 발생 시 생성된 파일들 정리
-    try {
-      const outputFiles = await fs.readdir(outputDir);
-      for (const file of outputFiles) {
-        if (file.includes('webm_') && file.includes(path.basename(inputPath, path.extname(inputPath)))) {
-          await fs.remove(path.join(outputDir, file));
-        }
-      }
-    } catch (cleanupError) {
-      console.error('정리 중 오류:', cleanupError);
-    }
-    
     throw new Error(`WebM 처리 실패: ${error.message}`);
   }
 }
@@ -302,3 +254,4 @@ module.exports = {
   detectQualityChanges,
   getWebMInfo
 };
+

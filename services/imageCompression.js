@@ -9,8 +9,6 @@ const path = require('path');
  * @returns {Promise<Object>} 압축 결과
  */
 async function compressImage(inputPath, targetSizeKB) {
-  const startTime = Date.now(); // 시작 시간 기록
-  
   try {
     const outputDir = path.join(__dirname, '..', 'output');
     await fs.ensureDir(outputDir);
@@ -24,8 +22,6 @@ async function compressImage(inputPath, targetSizeKB) {
       const outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
-      const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
-      
       return {
         success: true,
         message: `이미지가 이미 목표 용량(${targetSizeKB}KB) 이하입니다.`,
@@ -33,8 +29,6 @@ async function compressImage(inputPath, targetSizeKB) {
         compressedSize: parseFloat(originalSizeKB),
         compressionRatio: 0,
         outputPath: `/output/${path.basename(outputPath)}`,
-        executionTime: parseFloat(executionTime),
-        executionTimeFormatted: `${executionTime}초`,
         action: 'copied'
       };
     }
@@ -47,28 +41,36 @@ async function compressImage(inputPath, targetSizeKB) {
     let quality = 80;
     let outputPath;
     let compressedSizeKB;
-    let tempOutputPath;
     
     // 이진 탐색으로 최적 품질 찾기
     let minQuality = 10;
     let maxQuality = 100;
     let bestQuality = quality;
-    
-    // 임시 파일 경로 (이진 탐색용)
-    tempOutputPath = path.join(outputDir, `temp_${Date.now()}_${path.basename(inputPath)}`);
+    const tempFiles = [];
     
     while (minQuality <= maxQuality) {
       quality = Math.floor((minQuality + maxQuality) / 2);
       
-      // 이미지 압축 (임시 파일로 저장)
-      await sharp(inputPath)
-        .jpeg({ quality: quality, mozjpeg: true })  // mozjpeg 사용으로 더 나은 압축
-        .png({ quality: quality, compressionLevel: 9 })
-        .webp({ quality: quality, effort: 4 })  // effort 4: 속도와 압축률 균형
-        .toFile(tempOutputPath);
+      outputPath = path.join(outputDir, `temp_${Date.now()}_${quality}_${path.basename(inputPath)}`);
+      tempFiles.push(outputPath);
+      
+      // 포맷에 따라 최적화된 압축 적용
+      let sharpInstance = sharp(inputPath);
+      
+      if (format === 'jpeg' || format === 'jpg') {
+        sharpInstance = sharpInstance.jpeg({ quality: quality, mozjpeg: true });
+      } else if (format === 'png') {
+        sharpInstance = sharpInstance.png({ quality: quality, compressionLevel: 9 });
+      } else if (format === 'webp') {
+        sharpInstance = sharpInstance.webp({ quality: quality });
+      } else {
+        sharpInstance = sharpInstance.jpeg({ quality: quality, mozjpeg: true });
+      }
+      
+      await sharpInstance.toFile(outputPath);
       
       // 압축된 파일 크기 확인
-      const compressedStats = await fs.stat(tempOutputPath);
+      const compressedStats = await fs.stat(outputPath);
       compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
       
       if (parseFloat(compressedSizeKB) <= targetSizeKB) {
@@ -77,22 +79,37 @@ async function compressImage(inputPath, targetSizeKB) {
       } else {
         maxQuality = quality - 1;
       }
-      
-      // 마지막 반복이 아니면 임시 파일 삭제
-      if (minQuality <= maxQuality) {
-        await fs.remove(tempOutputPath);
+    }
+    
+    // 임시 파일 정리
+    for (const tempFile of tempFiles) {
+      try {
+        await fs.remove(tempFile);
+      } catch (err) {
+        // 에러 무시
       }
     }
     
-    // 최종 파일명으로 변경
+    // 최종 압축
     outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
-    await fs.move(tempOutputPath, outputPath, { overwrite: true });
+    let finalSharpInstance = sharp(inputPath);
+    
+    if (format === 'jpeg' || format === 'jpg') {
+      finalSharpInstance = finalSharpInstance.jpeg({ quality: bestQuality, mozjpeg: true });
+    } else if (format === 'png') {
+      finalSharpInstance = finalSharpInstance.png({ quality: bestQuality, compressionLevel: 9 });
+    } else if (format === 'webp') {
+      finalSharpInstance = finalSharpInstance.webp({ quality: bestQuality });
+    } else {
+      finalSharpInstance = finalSharpInstance.jpeg({ quality: bestQuality, mozjpeg: true });
+    }
+    
+    await finalSharpInstance.toFile(outputPath);
     
     const finalStats = await fs.stat(outputPath);
     const finalSizeKB = (finalStats.size / 1024).toFixed(2);
     
     const compressionRatio = (((parseFloat(originalSizeKB) - parseFloat(finalSizeKB)) / parseFloat(originalSizeKB)) * 100).toFixed(1);
-    const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
     
     return {
       success: true,
@@ -104,8 +121,6 @@ async function compressImage(inputPath, targetSizeKB) {
       dimensions: `${width}x${height}`,
       format: format,
       outputPath: `/output/${path.basename(outputPath)}`,
-      executionTime: parseFloat(executionTime),
-      executionTimeFormatted: `${executionTime}초`,
       action: 'compressed'
     };
     

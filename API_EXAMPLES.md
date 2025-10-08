@@ -128,8 +128,6 @@ compress_image('image.jpg', 500)
   "dimensions": "1920x1080",
   "format": "jpeg",
   "outputPath": "/output/compressed_1728378900123_image.jpg",
-  "executionTime": 2.34,
-  "executionTimeFormatted": "2.34초",
   "action": "compressed"
 }
 ```
@@ -241,8 +239,6 @@ compress_video('video.mp4', 51200, 'split')  # 50MB = 51200KB
   "resolution": "1920x1080",
   "bitrate": 682,
   "outputPath": "/output/compressed_1728378900123_video.mp4",
-  "executionTime": 45.67,
-  "executionTimeFormatted": "45.67초",
   "action": "compressed"
 }
 ```
@@ -277,8 +273,6 @@ compress_video('video.mp4', 51200, 'split')  # 50MB = 51200KB
       "outputPath": "/output/split_1728378900125_video_part3.mp4"
     }
   ],
-  "executionTime": 28.93,
-  "executionTimeFormatted": "28.93초",
   "action": "split"
 }
 ```
@@ -378,8 +372,6 @@ splitWebM(webmFile, 51200); // 50MB = 51200KB
       "outputPath": "/output/webm_1728378900124_video_part2.webm"
     }
   ],
-  "executionTime": 32.18,
-  "executionTimeFormatted": "32.18초",
   "action": "split_with_quality_detection"
 }
 ```
