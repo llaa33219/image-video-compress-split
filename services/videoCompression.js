@@ -53,11 +53,13 @@ async function compressVideo(inputPath, targetSizeKB) {
         .outputOptions([
           '-c:v libx264',
           '-c:a aac',
-          '-preset fast',
+          '-preset ultrafast',  // 속도 최적화: fast -> ultrafast
           '-crf 23',
           '-maxrate ' + targetBitrate + 'k',
           '-bufsize ' + (targetBitrate * 2) + 'k',
-          '-movflags +faststart'
+          '-movflags +faststart',
+          '-threads 0',  // 멀티스레딩: 모든 CPU 코어 사용
+          '-tune zerolatency'  // 지연 시간 최소화
         ])
         .output(outputPath)
         .on('start', (cmd) => {
@@ -147,21 +149,28 @@ async function splitVideo(inputPath, targetSizeKB) {
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
     
-    // 각 구간별로 분할
+    // 병렬 처리를 위한 Promise 배열 생성
+    const splitPromises = [];
+    const outputPaths = [];
+    
     for (let i = 0; i < totalParts; i++) {
       const startTime = i * segmentDuration;
       const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
       const outputPath = path.join(outputDir, `split_${timestamp}_${baseFileName}_part${i + 1}.mp4`);
+      outputPaths.push(outputPath);
       
-      await new Promise((resolve, reject) => {
+      // 병렬 처리: 모든 분할 작업을 동시에 시작
+      const splitPromise = new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .setStartTime(startTime)
           .setDuration(segmentDuration)
           .outputOptions([
             '-c:v libx264',
             '-c:a aac',
-            '-preset fast',
-            '-movflags +faststart'
+            '-preset ultrafast',  // 속도 최적화: fast -> ultrafast
+            '-movflags +faststart',
+            '-threads 2',  // 각 작업에 2개 스레드 할당
+            '-tune zerolatency'  // 지연 시간 최소화
           ])
           .output(outputPath)
           .on('start', (cmd) => {
@@ -172,7 +181,7 @@ async function splitVideo(inputPath, targetSizeKB) {
           })
           .on('end', () => {
             console.log(`파트 ${i + 1} 완료`);
-            resolve();
+            resolve({ partNumber: i + 1, startTime, outputPath });
           })
           .on('error', (err) => {
             console.error(`파트 ${i + 1} 오류:`, err);
@@ -181,18 +190,28 @@ async function splitVideo(inputPath, targetSizeKB) {
           .run();
       });
       
-      // 분할된 파일 크기 확인
-      const partStats = await fs.stat(outputPath);
+      splitPromises.push(splitPromise);
+    }
+    
+    // 모든 분할 작업이 완료될 때까지 대기 (병렬 처리)
+    const completedParts = await Promise.all(splitPromises);
+    
+    // 분할된 파일들의 크기 확인
+    for (const part of completedParts) {
+      const partStats = await fs.stat(part.outputPath);
       const partSizeKB = (partStats.size / 1024).toFixed(2);
       
       parts.push({
-        partNumber: i + 1,
+        partNumber: part.partNumber,
         size: parseFloat(partSizeKB),
         duration: segmentDuration,
-        startTime: startTime,
-        outputPath: `/output/${path.basename(outputPath)}`
+        startTime: part.startTime,
+        outputPath: `/output/${path.basename(part.outputPath)}`
       });
     }
+    
+    // partNumber 순으로 정렬
+    parts.sort((a, b) => a.partNumber - b.partNumber);
     
     return {
       success: true,

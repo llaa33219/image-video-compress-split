@@ -65,16 +65,18 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       });
     }
     
-    // 각 세그먼트를 개별 파일로 분할
+    // 병렬 처리를 위한 Promise 배열 생성
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
+    const splitPromises = [];
     
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
       const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
       const outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
       
-      await new Promise((resolve, reject) => {
+      // 병렬 처리: 모든 분할 작업을 동시에 시작
+      const splitPromise = new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .setStartTime(segment.startTime)
           .setDuration(segment.duration)
@@ -82,7 +84,12 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
             '-c:v libvpx-vp9',
             '-c:a libopus',
             '-b:v 0',
-            '-crf 30'
+            '-crf 30',
+            '-speed 6',  // VP9 인코딩 속도 최적화 (0=느림, 8=빠름)
+            '-cpu-used 5',  // CPU 사용 최적화
+            '-threads 2',  // 각 작업에 2개 스레드 할당
+            '-tile-columns 2',  // 타일 기반 병렬 처리
+            '-row-mt 1'  // 행 기반 멀티스레딩 활성화
           ])
           .output(outputPath)
           .on('start', (cmd) => {
@@ -93,7 +100,11 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           })
           .on('end', () => {
             console.log(`WebM 파트 ${i + 1} 완료`);
-            resolve();
+            resolve({ 
+              partNumber: i + 1, 
+              outputPath,
+              segment 
+            });
           })
           .on('error', (err) => {
             console.error(`WebM 파트 ${i + 1} 오류:`, err);
@@ -102,20 +113,30 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           .run();
       });
       
-      // 분할된 파일 크기 확인
-      const partStats = await fs.stat(outputPath);
+      splitPromises.push(splitPromise);
+    }
+    
+    // 모든 분할 작업이 완료될 때까지 대기 (병렬 처리)
+    const completedParts = await Promise.all(splitPromises);
+    
+    // 분할된 파일들의 크기 확인
+    for (const part of completedParts) {
+      const partStats = await fs.stat(part.outputPath);
       const partSizeKB = (partStats.size / 1024).toFixed(2);
       
       parts.push({
-        partNumber: i + 1,
+        partNumber: part.partNumber,
         size: parseFloat(partSizeKB),
-        duration: segment.duration,
-        startTime: segment.startTime,
-        endTime: segment.endTime,
-        qualityChange: segment.qualityChange,
-        outputPath: `/output/${path.basename(outputPath)}`
+        duration: part.segment.duration,
+        startTime: part.segment.startTime,
+        endTime: part.segment.endTime,
+        qualityChange: part.segment.qualityChange,
+        outputPath: `/output/${path.basename(part.outputPath)}`
       });
     }
+    
+    // partNumber 순으로 정렬
+    parts.sort((a, b) => a.partNumber - b.partNumber);
     
     return {
       success: true,
