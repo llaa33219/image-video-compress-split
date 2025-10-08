@@ -76,10 +76,11 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
     const splitPromises = [];
     const segmentInfos = [];
+    const baseTimestamp = Date.now(); // 고유한 기본 타임스탬프
     
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
-      const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
+      const timestamp = baseTimestamp + (i * 1000); // 각 파일마다 1초씩 차이나는 타임스탬프
       const outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
       
       segmentInfos.push({ index: i, segment, outputPath });
@@ -120,9 +121,17 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       splitPromises.push(splitPromise);
     }
     
-    // 모든 분할 작업을 병렬로 실행
+    // 모든 분할 작업을 병렬로 실행 (최대 4개씩 동시 처리)
     console.log(`${segments.length}개 WebM 파트를 병렬 처리 시작...`);
-    const results = await Promise.all(splitPromises);
+    const maxConcurrent = Math.min(4, segments.length); // 최대 4개까지 동시 처리
+    const results = [];
+    
+    for (let i = 0; i < splitPromises.length; i += maxConcurrent) {
+      const batch = splitPromises.slice(i, i + maxConcurrent);
+      const batchResults = await Promise.all(batch);
+      results.push(...batchResults);
+      console.log(`진행: ${Math.min(i + maxConcurrent, segments.length)}/${segments.length} 파트 완료`);
+    }
     
     // 결과를 순서대로 정리
     for (const result of results) {
@@ -160,6 +169,19 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
     
   } catch (error) {
     console.error('WebM 처리 오류:', error);
+    
+    // 에러 발생 시 생성된 파일들 정리
+    try {
+      const outputFiles = await fs.readdir(outputDir);
+      for (const file of outputFiles) {
+        if (file.includes('webm_') && file.includes(path.basename(inputPath, path.extname(inputPath)))) {
+          await fs.remove(path.join(outputDir, file));
+        }
+      }
+    } catch (cleanupError) {
+      console.error('정리 중 오류:', cleanupError);
+    }
+    
     throw new Error(`WebM 처리 실패: ${error.message}`);
   }
 }

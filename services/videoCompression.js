@@ -108,6 +108,19 @@ async function compressVideo(inputPath, targetSizeKB) {
     
   } catch (error) {
     console.error('영상 압축 오류:', error);
+    
+    // 에러 발생 시 생성된 파일들 정리
+    try {
+      const outputFiles = await fs.readdir(outputDir);
+      for (const file of outputFiles) {
+        if (file.includes('compressed_') && file.includes(path.basename(inputPath, path.extname(inputPath)))) {
+          await fs.remove(path.join(outputDir, file));
+        }
+      }
+    } catch (cleanupError) {
+      console.error('정리 중 오류:', cleanupError);
+    }
+    
     throw new Error(`영상 압축 실패: ${error.message}`);
   }
 }
@@ -166,10 +179,11 @@ async function splitVideo(inputPath, targetSizeKB) {
     // 병렬 처리를 위한 Promise 배열 생성
     const splitPromises = [];
     const partInfos = [];
+    const baseTimestamp = Date.now(); // 고유한 기본 타임스탬프
     
     for (let i = 0; i < totalParts; i++) {
       const startTime = i * segmentDuration;
-      const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
+      const timestamp = baseTimestamp + (i * 1000); // 각 파일마다 1초씩 차이나는 타임스탬프
       const outputPath = path.join(outputDir, `split_${timestamp}_${baseFileName}_part${i + 1}.mp4`);
       
       partInfos.push({ index: i, startTime, outputPath });
@@ -207,9 +221,17 @@ async function splitVideo(inputPath, targetSizeKB) {
       splitPromises.push(splitPromise);
     }
     
-    // 모든 분할 작업을 병렬로 실행
+    // 모든 분할 작업을 병렬로 실행 (최대 4개씩 동시 처리)
     console.log(`${totalParts}개 파트를 병렬 처리 시작...`);
-    const results = await Promise.all(splitPromises);
+    const maxConcurrent = Math.min(4, totalParts); // 최대 4개까지 동시 처리
+    const results = [];
+    
+    for (let i = 0; i < splitPromises.length; i += maxConcurrent) {
+      const batch = splitPromises.slice(i, i + maxConcurrent);
+      const batchResults = await Promise.all(batch);
+      results.push(...batchResults);
+      console.log(`진행: ${Math.min(i + maxConcurrent, totalParts)}/${totalParts} 파트 완료`);
+    }
     
     // 결과를 순서대로 정리
     for (const result of results) {
@@ -244,6 +266,20 @@ async function splitVideo(inputPath, targetSizeKB) {
     
   } catch (error) {
     console.error('영상 분할 오류:', error);
+    
+    // 에러 발생 시 생성된 파일들 정리
+    try {
+      const outputFiles = await fs.readdir(outputDir);
+      const timestamp = Date.now();
+      for (const file of outputFiles) {
+        if (file.includes('split_') && file.includes(path.basename(inputPath, path.extname(inputPath)))) {
+          await fs.remove(path.join(outputDir, file));
+        }
+      }
+    } catch (cleanupError) {
+      console.error('정리 중 오류:', cleanupError);
+    }
+    
     throw new Error(`영상 분할 실패: ${error.message}`);
   }
 }
