@@ -110,7 +110,7 @@ app.get('/', (req, res) => {
         description: '영상 압축 또는 분할',
         parameters: {
           video: 'file (required) - 영상 파일',
-          targetSizeMB: 'number (required) - 목표 용량 (MB)',
+          targetSizeKB: 'number (required) - 목표 용량 (KB)',
           compressionMode: 'string (required) - "compress" 또는 "split"'
         }
       },
@@ -120,7 +120,7 @@ app.get('/', (req, res) => {
         description: 'WebM 화질 변경 감지 및 분할',
         parameters: {
           video: 'file (required) - WebM 파일',
-          targetSizeMB: 'number (required) - 각 분할 파일 최대 용량 (MB)'
+          targetSizeKB: 'number (required) - 각 분할 파일 최대 용량 (KB)'
         }
       }
     },
@@ -167,9 +167,9 @@ app.post('/api/compress-video', upload.single('video'), async (req, res) => {
       return res.status(400).json({ error: '영상 파일이 필요합니다.' });
     }
 
-    const { targetSizeMB, compressionMode } = req.body;
-    if (!targetSizeMB || isNaN(targetSizeMB)) {
-      return res.status(400).json({ error: '유효한 목표 용량(MB)을 입력해주세요.' });
+    const { targetSizeKB, compressionMode } = req.body;
+    if (!targetSizeKB || isNaN(targetSizeKB)) {
+      return res.status(400).json({ error: '유효한 목표 용량(KB)을 입력해주세요.' });
     }
 
     if (!['compress', 'split'].includes(compressionMode)) {
@@ -178,9 +178,9 @@ app.post('/api/compress-video', upload.single('video'), async (req, res) => {
 
     let result;
     if (compressionMode === 'compress') {
-      result = await compressVideo(req.file.path, parseInt(targetSizeMB));
+      result = await compressVideo(req.file.path, parseInt(targetSizeKB));
     } else {
-      result = await splitVideo(req.file.path, parseInt(targetSizeMB));
+      result = await splitVideo(req.file.path, parseInt(targetSizeKB));
     }
     
     // 업로드된 파일 삭제
@@ -200,13 +200,13 @@ app.post('/api/split-webm', upload.single('video'), async (req, res) => {
       return res.status(400).json({ error: 'WebM 파일이 필요합니다.' });
     }
 
-    const { targetSizeMB } = req.body;
-    if (!targetSizeMB || isNaN(targetSizeMB)) {
-      return res.status(400).json({ error: '유효한 목표 용량(MB)을 입력해주세요.' });
+    const { targetSizeKB } = req.body;
+    if (!targetSizeKB || isNaN(targetSizeKB)) {
+      return res.status(400).json({ error: '유효한 목표 용량(KB)을 입력해주세요.' });
     }
 
     // WebM 화질 변경 감지 및 분할
-    const result = await detectWebMQualityChange(req.file.path, parseInt(targetSizeMB));
+    const result = await detectWebMQualityChange(req.file.path, parseInt(targetSizeKB));
     
     // 업로드된 파일 삭제
     await fs.remove(req.file.path);

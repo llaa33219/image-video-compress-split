@@ -121,9 +121,9 @@ compress_image('image.jpg', 500)
 {
   "success": true,
   "message": "이미지가 성공적으로 압축되었습니다.",
-  "originalSize": 2048,
-  "compressedSize": 498,
-  "compressionRatio": 76,
+  "originalSize": 2048.56,
+  "compressedSize": 498.23,
+  "compressionRatio": 75.7,
   "quality": 65,
   "dimensions": "1920x1080",
   "format": "jpeg",
@@ -131,6 +131,8 @@ compress_image('image.jpg', 500)
   "action": "compressed"
 }
 ```
+
+**참고**: 모든 크기는 KB 단위입니다.
 
 ## 2. 영상 압축 API
 
@@ -141,15 +143,15 @@ POST /api/compress-video
 
 ### 요청 파라미터
 - `video` (file, required): 압축할 영상 파일
-- `targetSizeMB` (number, required): 목표 용량 (MB)
+- `targetSizeKB` (number, required): 목표 용량 (KB)
 - `compressionMode` (string, required): "compress" (압축) 또는 "split" (분할)
 
 ### JavaScript 예제
 ```javascript
-async function compressVideo(videoFile, targetSizeMB, mode = 'compress') {
+async function compressVideo(videoFile, targetSizeKB, mode = 'compress') {
   const formData = new FormData();
   formData.append('video', videoFile);
-  formData.append('targetSizeMB', targetSizeMB);
+  formData.append('targetSizeKB', targetSizeKB);
   formData.append('compressionMode', mode);
 
   const response = await fetch('https://your-railway-app.railway.app/api/compress-video', {
@@ -178,21 +180,21 @@ async function compressVideo(videoFile, targetSizeMB, mode = 'compress') {
 
 // 사용 예제
 const videoFile = document.querySelector('input[type="file"]').files[0];
-compressVideo(videoFile, 100, 'compress'); // 100MB로 압축
-compressVideo(videoFile, 50, 'split'); // 50MB씩 분할
+compressVideo(videoFile, 102400, 'compress'); // 100MB (102400KB)로 압축
+compressVideo(videoFile, 51200, 'split'); // 50MB (51200KB)씩 분할
 ```
 
 ### Python 예제
 ```python
 import requests
 
-def compress_video(video_path, target_size_mb, mode='compress'):
+def compress_video(video_path, target_size_kb, mode='compress'):
     url = 'https://your-railway-app.railway.app/api/compress-video'
     
     with open(video_path, 'rb') as f:
         files = {'video': f}
         data = {
-            'targetSizeMB': target_size_mb,
+            'targetSizeKB': target_size_kb,
             'compressionMode': mode
         }
         
@@ -221,8 +223,8 @@ def download_file(url, filename):
     print(f'다운로드 완료: {filename}')
 
 # 사용 예제
-compress_video('video.mp4', 100, 'compress')
-compress_video('video.mp4', 50, 'split')
+compress_video('video.mp4', 102400, 'compress')  # 100MB = 102400KB
+compress_video('video.mp4', 51200, 'split')  # 50MB = 51200KB
 ```
 
 ### 압축 모드 응답 예제
@@ -230,9 +232,9 @@ compress_video('video.mp4', 50, 'split')
 {
   "success": true,
   "message": "영상이 성공적으로 압축되었습니다.",
-  "originalSize": 250,
-  "compressedSize": 98,
-  "compressionRatio": 61,
+  "originalSize": 256000,
+  "compressedSize": 100352,
+  "compressionRatio": 60.8,
   "duration": 120.5,
   "resolution": "1920x1080",
   "bitrate": 682,
@@ -246,26 +248,26 @@ compress_video('video.mp4', 50, 'split')
 {
   "success": true,
   "message": "영상이 3개 구간으로 분할되었습니다.",
-  "originalSize": 250,
+  "originalSize": 256000,
   "totalParts": 3,
   "parts": [
     {
       "partNumber": 1,
-      "size": 48,
+      "size": 49152,
       "duration": 40.17,
       "startTime": 0,
       "outputPath": "/output/split_1728378900123_video_part1.mp4"
     },
     {
       "partNumber": 2,
-      "size": 48,
+      "size": 49152,
       "duration": 40.17,
       "startTime": 40.17,
       "outputPath": "/output/split_1728378900124_video_part2.mp4"
     },
     {
       "partNumber": 3,
-      "size": 48,
+      "size": 49152,
       "duration": 40.16,
       "startTime": 80.34,
       "outputPath": "/output/split_1728378900125_video_part3.mp4"
@@ -274,6 +276,8 @@ compress_video('video.mp4', 50, 'split')
   "action": "split"
 }
 ```
+
+**참고**: 모든 크기는 KB 단위입니다.
 
 ## 3. WebM 분할 API (화질 변경 감지)
 
@@ -284,14 +288,14 @@ POST /api/split-webm
 
 ### 요청 파라미터
 - `video` (file, required): WebM 파일
-- `targetSizeMB` (number, required): 각 분할 파일 최대 용량 (MB)
+- `targetSizeKB` (number, required): 각 분할 파일 최대 용량 (KB)
 
 ### JavaScript 예제
 ```javascript
-async function splitWebM(webmFile, targetSizeMB) {
+async function splitWebM(webmFile, targetSizeKB) {
   const formData = new FormData();
   formData.append('video', webmFile);
-  formData.append('targetSizeMB', targetSizeMB);
+  formData.append('targetSizeKB', targetSizeKB);
 
   const response = await fetch('https://your-railway-app.railway.app/api/split-webm', {
     method: 'POST',
@@ -306,7 +310,7 @@ async function splitWebM(webmFile, targetSizeMB) {
     
     // 모든 파트 다운로드
     result.parts.forEach(part => {
-      console.log(`파트 ${part.partNumber}: ${part.size}MB`);
+      console.log(`파트 ${part.partNumber}: ${part.size}KB`);
       if (part.qualityChange) {
         console.log('  → 화질 변경:', part.qualityChange);
       }
@@ -316,6 +320,10 @@ async function splitWebM(webmFile, targetSizeMB) {
   
   return result;
 }
+
+// 사용 예제
+const webmFile = document.querySelector('input[type="file"]').files[0];
+splitWebM(webmFile, 51200); // 50MB = 51200KB
 ```
 
 ### 응답 예제
@@ -323,7 +331,7 @@ async function splitWebM(webmFile, targetSizeMB) {
 {
   "success": true,
   "message": "WebM 파일이 4개 구간으로 분할되었습니다. (화질 변경 2개 감지)",
-  "originalSize": 180,
+  "originalSize": 184320,
   "totalParts": 4,
   "qualityChanges": [
     {
@@ -342,7 +350,7 @@ async function splitWebM(webmFile, targetSizeMB) {
   "parts": [
     {
       "partNumber": 1,
-      "size": 45,
+      "size": 46080,
       "duration": 30.5,
       "startTime": 0,
       "endTime": 30.5,
@@ -351,7 +359,7 @@ async function splitWebM(webmFile, targetSizeMB) {
     },
     {
       "partNumber": 2,
-      "size": 42,
+      "size": 43008,
       "duration": 44.7,
       "startTime": 30.5,
       "endTime": 75.2,
@@ -367,6 +375,8 @@ async function splitWebM(webmFile, targetSizeMB) {
   "action": "split_with_quality_detection"
 }
 ```
+
+**참고**: 모든 크기는 KB 단위입니다.
 
 ## 에러 응답
 

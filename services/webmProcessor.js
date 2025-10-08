@@ -9,35 +9,35 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
 /**
  * WebM 파일의 화질 변경 감지 및 분할
  * @param {string} inputPath - 입력 WebM 파일 경로
- * @param {number} targetSizeMB - 각 분할 파일의 최대 용량 (MB)
+ * @param {number} targetSizeKB - 각 분할 파일의 최대 용량 (KB)
  * @returns {Promise<Object>} 처리 결과
  */
-async function detectWebMQualityChange(inputPath, targetSizeMB) {
+async function detectWebMQualityChange(inputPath, targetSizeKB) {
   try {
     const outputDir = path.join(__dirname, '..', 'output');
     await fs.ensureDir(outputDir);
     
     // 원본 파일 정보
     const originalStats = await fs.stat(inputPath);
-    const originalSizeMB = (originalStats.size / (1024 * 1024)).toFixed(2);
+    const originalSizeKB = (originalStats.size / 1024).toFixed(2);
     
     // WebM 파일 정보 가져오기
     const webmInfo = await getWebMInfo(inputPath);
     
     // 이미 목표 용량 이하인 경우
-    if (parseFloat(originalSizeMB) <= targetSizeMB) {
+    if (parseFloat(originalSizeKB) <= targetSizeKB) {
       const outputPath = path.join(outputDir, `webm_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
       return {
         success: true,
-        message: `WebM 파일이 이미 목표 용량(${targetSizeMB}MB) 이하입니다.`,
-        originalSize: parseFloat(originalSizeMB),
+        message: `WebM 파일이 이미 목표 용량(${targetSizeKB}KB) 이하입니다.`,
+        originalSize: parseFloat(originalSizeKB),
         totalParts: 1,
         qualityChanges: [],
         parts: [{
           partNumber: 1,
-          size: parseFloat(originalSizeMB),
+          size: parseFloat(originalSizeKB),
           duration: webmInfo.duration,
           outputPath: `/output/${path.basename(outputPath)}`
         }],
@@ -104,11 +104,11 @@ async function detectWebMQualityChange(inputPath, targetSizeMB) {
       
       // 분할된 파일 크기 확인
       const partStats = await fs.stat(outputPath);
-      const partSizeMB = (partStats.size / (1024 * 1024)).toFixed(2);
+      const partSizeKB = (partStats.size / 1024).toFixed(2);
       
       parts.push({
         partNumber: i + 1,
-        size: parseFloat(partSizeMB),
+        size: parseFloat(partSizeKB),
         duration: segment.duration,
         startTime: segment.startTime,
         endTime: segment.endTime,
@@ -120,7 +120,7 @@ async function detectWebMQualityChange(inputPath, targetSizeMB) {
     return {
       success: true,
       message: `WebM 파일이 ${parts.length}개 구간으로 분할되었습니다. (화질 변경 ${qualityChanges.length}개 감지)`,
-      originalSize: parseFloat(originalSizeMB),
+      originalSize: parseFloat(originalSizeKB),
       totalParts: parts.length,
       qualityChanges: qualityChanges,
       parts: parts,

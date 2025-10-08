@@ -9,28 +9,28 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
 /**
  * 영상을 목표 용량 이하로 압축
  * @param {string} inputPath - 입력 영상 경로
- * @param {number} targetSizeMB - 목표 용량 (MB)
+ * @param {number} targetSizeKB - 목표 용량 (KB)
  * @returns {Promise<Object>} 압축 결과
  */
-async function compressVideo(inputPath, targetSizeMB) {
+async function compressVideo(inputPath, targetSizeKB) {
   try {
     const outputDir = path.join(__dirname, '..', 'output');
     await fs.ensureDir(outputDir);
     
     // 원본 파일 정보
     const originalStats = await fs.stat(inputPath);
-    const originalSizeMB = Math.round(originalStats.size / (1024 * 1024));
+    const originalSizeKB = (originalStats.size / 1024).toFixed(2);
     
     // 이미 목표 용량 이하인 경우
-    if (originalSizeMB <= targetSizeMB) {
+    if (parseFloat(originalSizeKB) <= targetSizeKB) {
       const outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
       return {
         success: true,
-        message: `영상이 이미 목표 용량(${targetSizeMB}MB) 이하입니다.`,
-        originalSize: originalSizeMB,
-        compressedSize: originalSizeMB,
+        message: `영상이 이미 목표 용량(${targetSizeKB}KB) 이하입니다.`,
+        originalSize: parseFloat(originalSizeKB),
+        compressedSize: parseFloat(originalSizeKB),
         compressionRatio: 0,
         outputPath: `/output/${path.basename(outputPath)}`,
         action: 'copied'
@@ -41,7 +41,7 @@ async function compressVideo(inputPath, targetSizeMB) {
     const videoInfo = await getVideoInfo(inputPath);
     
     // 목표 비트레이트 계산 (kbps)
-    const targetBitrate = Math.floor((targetSizeMB * 8 * 1024) / videoInfo.duration);
+    const targetBitrate = Math.floor((targetSizeKB * 8) / videoInfo.duration);
     
     const outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
     
@@ -79,15 +79,15 @@ async function compressVideo(inputPath, targetSizeMB) {
     
     // 압축된 파일 크기 확인
     const compressedStats = await fs.stat(outputPath);
-    const compressedSizeMB = (compressedStats.size / (1024 * 1024)).toFixed(2);
+    const compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
     
-    const compressionRatio = ((originalSizeMB - parseFloat(compressedSizeMB)) / originalSizeMB * 100).toFixed(1);
+    const compressionRatio = ((parseFloat(originalSizeKB) - parseFloat(compressedSizeKB)) / parseFloat(originalSizeKB) * 100).toFixed(1);
     
     return {
       success: true,
       message: `영상이 성공적으로 압축되었습니다.`,
-      originalSize: originalSizeMB,
-      compressedSize: parseFloat(compressedSizeMB),
+      originalSize: parseFloat(originalSizeKB),
+      compressedSize: parseFloat(compressedSizeKB),
       compressionRatio: parseFloat(compressionRatio),
       duration: videoInfo.duration,
       resolution: videoInfo.resolution,
@@ -105,34 +105,34 @@ async function compressVideo(inputPath, targetSizeMB) {
 /**
  * 영상을 여러 개의 작은 파일로 분할
  * @param {string} inputPath - 입력 영상 경로
- * @param {number} targetSizeMB - 각 분할 파일의 최대 용량 (MB)
+ * @param {number} targetSizeKB - 각 분할 파일의 최대 용량 (KB)
  * @returns {Promise<Object>} 분할 결과
  */
-async function splitVideo(inputPath, targetSizeMB) {
+async function splitVideo(inputPath, targetSizeKB) {
   try {
     const outputDir = path.join(__dirname, '..', 'output');
     await fs.ensureDir(outputDir);
     
     // 원본 파일 정보
     const originalStats = await fs.stat(inputPath);
-    const originalSizeMB = Math.round(originalStats.size / (1024 * 1024));
+    const originalSizeKB = (originalStats.size / 1024).toFixed(2);
     
     // 영상 정보 가져오기
     const videoInfo = await getVideoInfo(inputPath);
     
     // 이미 목표 용량 이하인 경우
-    if (originalSizeMB <= targetSizeMB) {
+    if (parseFloat(originalSizeKB) <= targetSizeKB) {
       const outputPath = path.join(outputDir, `split_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
       return {
         success: true,
-        message: `영상이 이미 목표 용량(${targetSizeMB}MB) 이하입니다.`,
-        originalSize: originalSizeMB,
+        message: `영상이 이미 목표 용량(${targetSizeKB}KB) 이하입니다.`,
+        originalSize: parseFloat(originalSizeKB),
         totalParts: 1,
         parts: [{
           partNumber: 1,
-          size: originalSizeMB,
+          size: parseFloat(originalSizeKB),
           duration: videoInfo.duration,
           outputPath: `/output/${path.basename(outputPath)}`
         }],
@@ -141,7 +141,7 @@ async function splitVideo(inputPath, targetSizeMB) {
     }
     
     // 분할할 구간 수 계산
-    const totalParts = Math.ceil(originalSizeMB / targetSizeMB);
+    const totalParts = Math.ceil(parseFloat(originalSizeKB) / targetSizeKB);
     const segmentDuration = videoInfo.duration / totalParts;
     
     const parts = [];
@@ -183,11 +183,11 @@ async function splitVideo(inputPath, targetSizeMB) {
       
       // 분할된 파일 크기 확인
       const partStats = await fs.stat(outputPath);
-      const partSizeMB = (partStats.size / (1024 * 1024)).toFixed(2);
+      const partSizeKB = (partStats.size / 1024).toFixed(2);
       
       parts.push({
         partNumber: i + 1,
-        size: parseFloat(partSizeMB),
+        size: parseFloat(partSizeKB),
         duration: segmentDuration,
         startTime: startTime,
         outputPath: `/output/${path.basename(outputPath)}`
@@ -197,7 +197,7 @@ async function splitVideo(inputPath, targetSizeMB) {
     return {
       success: true,
       message: `영상이 ${totalParts}개 구간으로 분할되었습니다.`,
-      originalSize: originalSizeMB,
+      originalSize: parseFloat(originalSizeKB),
       totalParts: totalParts,
       parts: parts,
       action: 'split'

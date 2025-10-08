@@ -478,8 +478,8 @@
                     <div class="control-group">
                         <h3>용량 설정</h3>
                         <div class="form-group">
-                            <label for="video-target-size">목표 용량 (MB)</label>
-                            <input type="number" id="video-target-size" placeholder="예: 100" min="1" max="500">
+                            <label for="video-target-size">목표 용량 (KB)</label>
+                            <input type="number" id="video-target-size" placeholder="예: 102400 (100MB)" min="1" max="512000">
                         </div>
                     </div>
                 </div>
@@ -500,8 +500,8 @@
                     <div class="control-group">
                         <h3>분할 설정</h3>
                         <div class="form-group">
-                            <label for="webm-target-size">각 분할 파일 최대 용량 (MB)</label>
-                            <input type="number" id="webm-target-size" placeholder="예: 50" min="1" max="500">
+                            <label for="webm-target-size">각 분할 파일 최대 용량 (KB)</label>
+                            <input type="number" id="webm-target-size" placeholder="예: 51200 (50MB)" min="1" max="512000">
                         </div>
                     </div>
                 </div>
@@ -706,7 +706,7 @@
             }
 
             await processFile('/api/compress-video', { 
-                targetSizeMB: targetSize, 
+                targetSizeKB: targetSize, 
                 compressionMode: mode 
             });
         }
@@ -719,7 +719,7 @@
                 return;
             }
 
-            await processFile('/api/split-webm', { targetSizeMB: targetSize });
+            await processFile('/api/split-webm', { targetSizeKB: targetSize });
         }
 
         // 파일 처리 공통 함수
@@ -794,23 +794,23 @@
             }
         }
 
-        // 크기 포맷팅 함수
-        function formatSize(size, defaultUnit) {
-            if (!size && size !== 0) return 'N/A';
+        // 크기 포맷팅 함수 (모두 KB로 통일)
+        function formatSize(sizeKB) {
+            if (!sizeKB && sizeKB !== 0) return 'N/A';
             
-            // defaultUnit이 'MB'면 MB 단위로 처리, 아니면 KB 단위로 처리
-            if (defaultUnit === 'MB') {
-                // MB 단위
-                if (size >= 1000) {
-                    return `${(size / 1000).toFixed(2)} GB`;
-                }
-                return `${parseFloat(size).toFixed(2)} MB`;
-            } else {
-                // KB 단위
-                if (size >= 1024) {
-                    return `${(size / 1024).toFixed(2)} MB`;
-                }
-                return `${parseFloat(size).toFixed(2)} KB`;
+            const kb = parseFloat(sizeKB);
+            
+            // GB 단위 (1048576 KB = 1024 MB = 1 GB)
+            if (kb >= 1048576) {
+                return `${(kb / 1048576).toFixed(2)} GB`;
+            }
+            // MB 단위 (1024 KB = 1 MB)
+            else if (kb >= 1024) {
+                return `${(kb / 1024).toFixed(2)} MB`;
+            }
+            // KB 단위
+            else {
+                return `${kb.toFixed(2)} KB`;
             }
         }
 
@@ -830,20 +830,15 @@
                 statusEl.textContent = '성공';
                 statusEl.className = 'result-status success';
                 
-                // 현재 탭에 따라 단위 결정 (이미지는 KB, 영상은 MB)
-                const activeTab = document.querySelector('.tab-content.active');
-                const isImageTab = activeTab.id === 'image-tab';
-                const sizeUnit = isImageTab ? 'KB' : 'MB';
-                
-                // 기본 정보 표시
+                // 기본 정보 표시 (모두 KB 단위로 통일)
                 infoEl.innerHTML = `
                     <div class="info-item">
                         <div class="info-label">원본 크기</div>
-                        <div class="info-value">${formatSize(result.originalSize, sizeUnit)}</div>
+                        <div class="info-value">${formatSize(result.originalSize)}</div>
                     </div>
                     <div class="info-item">
                         <div class="info-label">처리 후 크기</div>
-                        <div class="info-value">${result.compressedSize ? formatSize(result.compressedSize, sizeUnit) : (result.totalParts + '개 파일')}</div>
+                        <div class="info-value">${result.compressedSize ? formatSize(result.compressedSize) : (result.totalParts + '개 파일')}</div>
                     </div>
                     ${result.compressionRatio ? `
                     <div class="info-item">
@@ -871,7 +866,7 @@
                             <div class="part-info">
                                 <div class="part-title">파트 ${part.partNumber}</div>
                                 <div class="part-details">
-                                    크기: ${formatSize(part.size, 'MB')} | 
+                                    크기: ${formatSize(part.size)} | 
                                     길이: ${Math.round(part.duration)}초
                                     ${part.startTime !== undefined ? ` | 시작: ${Math.round(part.startTime)}초` : ''}
                                 </div>
