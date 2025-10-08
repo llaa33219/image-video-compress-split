@@ -13,6 +13,8 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
  * @returns {Promise<Object>} 처리 결과
  */
 async function detectWebMQualityChange(inputPath, targetSizeKB) {
+  const startTime = Date.now(); // 시작 시간 기록
+  
   try {
     const outputDir = path.join(__dirname, '..', 'output');
     await fs.ensureDir(outputDir);
@@ -29,6 +31,8 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       const outputPath = path.join(outputDir, `webm_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
+      const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
+      
       return {
         success: true,
         message: `WebM 파일이 이미 목표 용량(${targetSizeKB}KB) 이하입니다.`,
@@ -41,6 +45,8 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           duration: webmInfo.duration,
           outputPath: `/output/${path.basename(outputPath)}`
         }],
+        executionTime: parseFloat(executionTime),
+        executionTimeFormatted: `${executionTime}초`,
         action: 'copied'
       };
     }
@@ -138,6 +144,8 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
     // 파트 번호순으로 정렬
     parts.sort((a, b) => a.partNumber - b.partNumber);
     
+    const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    
     return {
       success: true,
       message: `WebM 파일이 ${parts.length}개 구간으로 분할되었습니다. (화질 변경 ${qualityChanges.length}개 감지)`,
@@ -145,6 +153,8 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       totalParts: parts.length,
       qualityChanges: qualityChanges,
       parts: parts,
+      executionTime: parseFloat(executionTime),
+      executionTimeFormatted: `${executionTime}초`,
       action: 'split_with_quality_detection'
     };
     

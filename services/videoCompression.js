@@ -13,6 +13,8 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
  * @returns {Promise<Object>} 압축 결과
  */
 async function compressVideo(inputPath, targetSizeKB) {
+  const startTime = Date.now(); // 시작 시간 기록
+  
   try {
     const outputDir = path.join(__dirname, '..', 'output');
     await fs.ensureDir(outputDir);
@@ -26,6 +28,8 @@ async function compressVideo(inputPath, targetSizeKB) {
       const outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
+      const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
+      
       return {
         success: true,
         message: `영상이 이미 목표 용량(${targetSizeKB}KB) 이하입니다.`,
@@ -33,6 +37,8 @@ async function compressVideo(inputPath, targetSizeKB) {
         compressedSize: parseFloat(originalSizeKB),
         compressionRatio: 0,
         outputPath: `/output/${path.basename(outputPath)}`,
+        executionTime: parseFloat(executionTime),
+        executionTimeFormatted: `${executionTime}초`,
         action: 'copied'
       };
     }
@@ -83,6 +89,7 @@ async function compressVideo(inputPath, targetSizeKB) {
     const compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
     
     const compressionRatio = ((parseFloat(originalSizeKB) - parseFloat(compressedSizeKB)) / parseFloat(originalSizeKB) * 100).toFixed(1);
+    const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
     
     return {
       success: true,
@@ -94,6 +101,8 @@ async function compressVideo(inputPath, targetSizeKB) {
       resolution: videoInfo.resolution,
       bitrate: targetBitrate,
       outputPath: `/output/${path.basename(outputPath)}`,
+      executionTime: parseFloat(executionTime),
+      executionTimeFormatted: `${executionTime}초`,
       action: 'compressed'
     };
     
@@ -110,6 +119,8 @@ async function compressVideo(inputPath, targetSizeKB) {
  * @returns {Promise<Object>} 분할 결과
  */
 async function splitVideo(inputPath, targetSizeKB) {
+  const startTime = Date.now(); // 시작 시간 기록
+  
   try {
     const outputDir = path.join(__dirname, '..', 'output');
     await fs.ensureDir(outputDir);
@@ -126,6 +137,8 @@ async function splitVideo(inputPath, targetSizeKB) {
       const outputPath = path.join(outputDir, `split_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
+      const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
+      
       return {
         success: true,
         message: `영상이 이미 목표 용량(${targetSizeKB}KB) 이하입니다.`,
@@ -137,6 +150,8 @@ async function splitVideo(inputPath, targetSizeKB) {
           duration: videoInfo.duration,
           outputPath: `/output/${path.basename(outputPath)}`
         }],
+        executionTime: parseFloat(executionTime),
+        executionTimeFormatted: `${executionTime}초`,
         action: 'copied'
       };
     }
@@ -214,12 +229,16 @@ async function splitVideo(inputPath, targetSizeKB) {
     // 파트 번호순으로 정렬
     parts.sort((a, b) => a.partNumber - b.partNumber);
     
+    const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    
     return {
       success: true,
       message: `영상이 ${totalParts}개 구간으로 분할되었습니다.`,
       originalSize: parseFloat(originalSizeKB),
       totalParts: totalParts,
       parts: parts,
+      executionTime: parseFloat(executionTime),
+      executionTimeFormatted: `${executionTime}초`,
       action: 'split'
     };
     
