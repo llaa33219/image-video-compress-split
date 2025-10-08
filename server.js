@@ -13,17 +13,23 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 미들웨어 설정
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? false : true,
-  credentials: true
+  origin: true, // 모든 출처 허용 (외부 API 호출용)
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Rate limiting
+// Rate limiting - 외부 API 호출을 고려하여 제한 완화
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15분
-  max: 100, // 최대 100 요청
-  message: '너무 많은 요청입니다. 잠시 후 다시 시도해주세요.'
+  max: 500, // 최대 500 요청 (외부 API용으로 증가)
+  message: { error: '너무 많은 요청입니다. 잠시 후 다시 시도해주세요.' },
+  standardHeaders: true,
+  legacyHeaders: false
 });
 app.use('/api/', limiter);
 
@@ -68,8 +74,51 @@ const upload = multer({
 // 정적 파일 서빙
 app.use('/output', express.static(outputDir));
 
-// 메인 페이지
+// API 상태 확인 엔드포인트
 app.get('/', (req, res) => {
+  res.json({
+    service: '미디어 압축 및 분할 API',
+    version: '1.0.0',
+    status: 'online',
+    endpoints: {
+      image_compression: {
+        method: 'POST',
+        path: '/api/compress-image',
+        description: '이미지를 목표 용량으로 압축',
+        parameters: {
+          image: 'file (required) - 이미지 파일',
+          targetSizeKB: 'number (required) - 목표 용량 (KB)'
+        }
+      },
+      video_compression: {
+        method: 'POST',
+        path: '/api/compress-video',
+        description: '영상 압축 또는 분할',
+        parameters: {
+          video: 'file (required) - 영상 파일',
+          targetSizeMB: 'number (required) - 목표 용량 (MB)',
+          compressionMode: 'string (required) - "compress" 또는 "split"'
+        }
+      },
+      webm_split: {
+        method: 'POST',
+        path: '/api/split-webm',
+        description: 'WebM 화질 변경 감지 및 분할',
+        parameters: {
+          video: 'file (required) - WebM 파일',
+          targetSizeMB: 'number (required) - 각 분할 파일 최대 용량 (MB)'
+        }
+      }
+    },
+    limits: {
+      max_file_size: '500MB',
+      rate_limit: '500 requests per 15 minutes'
+    }
+  });
+});
+
+// 웹 UI 페이지
+app.get('/web', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

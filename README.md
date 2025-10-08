@@ -1,6 +1,8 @@
-# 미디어 압축 및 분할 서비스
+# 미디어 압축 및 분할 API 서비스
 
-이미지와 영상을 효율적으로 압축하고 분할하는 웹 서비스입니다.
+이미지와 영상을 효율적으로 압축하고 분할하는 RESTful API 서비스입니다.
+
+**외부 사이트에서 API로 호출하여 사용하는 것이 주요 목적입니다.**
 
 ## 기능
 
@@ -22,9 +24,40 @@
 - 화질 변경 지점에서 자동 분할
 - 각 분할 파일의 최대 용량 설정 가능
 
+## 빠른 시작
+
+### API 상태 확인
+```bash
+curl https://your-railway-app.railway.app/
+```
+
+### 이미지 압축 예제
+```bash
+curl -X POST https://your-railway-app.railway.app/api/compress-image \
+  -F "image=@image.jpg" \
+  -F "targetSizeKB=500"
+```
+
+### JavaScript에서 호출
+```javascript
+const formData = new FormData();
+formData.append('image', imageFile);
+formData.append('targetSizeKB', 500);
+
+const response = await fetch('https://your-railway-app.railway.app/api/compress-image', {
+  method: 'POST',
+  body: formData
+});
+
+const result = await response.json();
+console.log(result);
+```
+
+**자세한 API 사용법은 [API_EXAMPLES.md](./API_EXAMPLES.md)를 참조하세요.**
+
 ## API 엔드포인트
 
-### 이미지 압축
+### 1. 이미지 압축
 ```
 POST /api/compress-image
 Content-Type: multipart/form-data
@@ -34,7 +67,7 @@ Content-Type: multipart/form-data
 - targetSizeKB: 목표 용량 (KB)
 ```
 
-### 영상 압축
+### 2. 영상 압축
 ```
 POST /api/compress-video
 Content-Type: multipart/form-data
@@ -45,7 +78,7 @@ Content-Type: multipart/form-data
 - compressionMode: "compress" 또는 "split"
 ```
 
-### WebM 분할
+### 3. WebM 분할
 ```
 POST /api/split-webm
 Content-Type: multipart/form-data
@@ -91,15 +124,33 @@ npm start
   - 이미지: JPG, PNG, WebP, GIF
   - 영상: MP4, WebM, AVI, MOV, MKV
 
-## 보안 기능
+## 보안 및 제한사항
 
-- Rate Limiting (15분당 100요청)
-- 파일 형식 검증
-- 파일 크기 제한
-- CORS 설정
-- Helmet 보안 헤더
+- **Rate Limiting**: 15분당 500 요청 (외부 API 호출 고려)
+- **파일 형식 검증**: 지원되는 형식만 허용
+- **파일 크기 제한**: 최대 500MB
+- **CORS**: 모든 도메인에서 API 호출 가능
+- **Helmet 보안 헤더**: XSS, CSRF 등 보안 강화
+- **자동 파일 정리**: 처리된 파일은 일정 시간 후 삭제
+
+## 웹 UI 접근
+
+API 외에도 웹 브라우저에서 직접 사용할 수 있는 UI가 제공됩니다:
+```
+https://your-railway-app.railway.app/web
+```
 
 ## 환경 변수
 
 - `PORT`: 서버 포트 (기본값: 3000)
 - `NODE_ENV`: 환경 설정 (production/development)
+
+## 활용 예시
+
+이 API는 다음과 같은 용도로 활용할 수 있습니다:
+
+1. **파일 업로드 사이트**: 사용자가 업로드한 이미지/영상을 자동 압축
+2. **CMS/블로그**: 게시물 작성 시 미디어 파일 최적화
+3. **모바일 앱**: 앱에서 촬영한 사진/영상을 서버로 전송 전 압축
+4. **채팅 애플리케이션**: 미디어 공유 시 자동 크기 조정
+5. **영상 스트리밍**: 영상을 적절한 크기로 분할하여 업로드
