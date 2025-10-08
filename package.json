@@ -1,0 +1,29 @@
+{
+  "name": "media-compression-service",
+  "version": "1.0.0",
+  "description": "이미지 및 영상 압축 및 분할 서비스",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "sharp": "^0.32.6",
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5",
+    "fs-extra": "^11.1.1",
+    "path": "^0.12.7",
+    "mime-types": "^2.1.35"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
