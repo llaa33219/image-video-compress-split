@@ -37,48 +37,29 @@ async function compressImage(inputPath, targetSizeKB) {
     const metadata = await sharp(inputPath).metadata();
     const { width, height, format } = metadata;
     
-    // Sharp 성능 최적화 설정
-    sharp.cache({ memory: 100, files: 20, items: 200 });
-    sharp.concurrency(1);  // 단일 이미지 처리 최적화
-    
     // 압축 품질 설정 (초기값)
     let quality = 80;
     let outputPath;
     let compressedSizeKB;
+    let tempOutputPath;
     
-    // 빠른 이진 탐색으로 최적 품질 찾기 (임시 파일 재사용)
+    // 이진 탐색으로 최적 품질 찾기
     let minQuality = 10;
     let maxQuality = 100;
     let bestQuality = quality;
-    const tempOutputPath = path.join(outputDir, `temp_${Date.now()}_${path.basename(inputPath)}`);
+    
+    // 임시 파일 경로 (이진 탐색용)
+    tempOutputPath = path.join(outputDir, `temp_${Date.now()}_${path.basename(inputPath)}`);
     
     while (minQuality <= maxQuality) {
       quality = Math.floor((minQuality + maxQuality) / 2);
       
-      // 임시 파일로 빠르게 테스트
-      let sharpInstance = sharp(inputPath);
-      
-      // 포맷별 최적화된 압축 옵션
-      if (format === 'jpeg' || format === 'jpg') {
-        sharpInstance = sharpInstance.jpeg({ 
-          quality: quality, 
-          progressive: false,  // 속도 우선
-          mozjpeg: true  // 더 나은 압축
-        });
-      } else if (format === 'png') {
-        sharpInstance = sharpInstance.png({ 
-          quality: quality,
-          compressionLevel: 6,  // 속도와 압축의 균형
-          adaptiveFiltering: false  // 속도 향상
-        });
-      } else if (format === 'webp') {
-        sharpInstance = sharpInstance.webp({ 
-          quality: quality,
-          effort: 2  // 빠른 처리 (0-6, 낮을수록 빠름)
-        });
-      }
-      
-      await sharpInstance.toFile(tempOutputPath);
+      // 이미지 압축 (임시 파일로 저장)
+      await sharp(inputPath)
+        .jpeg({ quality: quality, mozjpeg: true })  // mozjpeg 사용으로 더 나은 압축
+        .png({ quality: quality, compressionLevel: 9 })
+        .webp({ quality: quality, effort: 4 })  // effort 4: 속도와 압축률 균형
+        .toFile(tempOutputPath);
       
       // 압축된 파일 크기 확인
       const compressedStats = await fs.stat(tempOutputPath);
@@ -91,7 +72,7 @@ async function compressImage(inputPath, targetSizeKB) {
         maxQuality = quality - 1;
       }
       
-      // 임시 파일 삭제 (마지막 반복 제외)
+      // 마지막 반복이 아니면 임시 파일 삭제
       if (minQuality <= maxQuality) {
         await fs.remove(tempOutputPath);
       }
@@ -99,7 +80,7 @@ async function compressImage(inputPath, targetSizeKB) {
     
     // 최종 파일명으로 변경
     outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
-    await fs.move(tempOutputPath, outputPath);
+    await fs.move(tempOutputPath, outputPath, { overwrite: true });
     
     const finalStats = await fs.stat(outputPath);
     const finalSizeKB = (finalStats.size / 1024).toFixed(2);
