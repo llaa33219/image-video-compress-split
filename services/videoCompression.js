@@ -51,29 +51,44 @@ async function compressVideo(inputPath, targetSizeMB) {
         .videoBitrate(targetBitrate)
         .audioBitrate('128k')
         .outputOptions([
+          '-c:v libx264',
+          '-c:a aac',
           '-preset fast',
           '-crf 23',
           '-maxrate ' + targetBitrate + 'k',
-          '-bufsize ' + (targetBitrate * 2) + 'k'
+          '-bufsize ' + (targetBitrate * 2) + 'k',
+          '-movflags +faststart'
         ])
         .output(outputPath)
-        .on('end', resolve)
-        .on('error', reject)
+        .on('start', (cmd) => {
+          console.log('FFmpeg 명령어 실행:', cmd);
+        })
+        .on('progress', (progress) => {
+          console.log(`압축 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+        })
+        .on('end', () => {
+          console.log('압축 완료');
+          resolve();
+        })
+        .on('error', (err) => {
+          console.error('압축 오류:', err);
+          reject(err);
+        })
         .run();
     });
     
     // 압축된 파일 크기 확인
     const compressedStats = await fs.stat(outputPath);
-    const compressedSizeMB = Math.round(compressedStats.size / (1024 * 1024));
+    const compressedSizeMB = (compressedStats.size / (1024 * 1024)).toFixed(2);
     
-    const compressionRatio = Math.round(((originalSizeMB - compressedSizeMB) / originalSizeMB) * 100);
+    const compressionRatio = ((originalSizeMB - parseFloat(compressedSizeMB)) / originalSizeMB * 100).toFixed(1);
     
     return {
       success: true,
       message: `영상이 성공적으로 압축되었습니다.`,
       originalSize: originalSizeMB,
-      compressedSize: compressedSizeMB,
-      compressionRatio: compressionRatio,
+      compressedSize: parseFloat(compressedSizeMB),
+      compressionRatio: parseFloat(compressionRatio),
       duration: videoInfo.duration,
       resolution: videoInfo.resolution,
       bitrate: targetBitrate,
@@ -135,25 +150,44 @@ async function splitVideo(inputPath, targetSizeMB) {
     // 각 구간별로 분할
     for (let i = 0; i < totalParts; i++) {
       const startTime = i * segmentDuration;
-      const outputPath = path.join(outputDir, `split_${Date.now()}_${baseFileName}_part${i + 1}.mp4`);
+      const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
+      const outputPath = path.join(outputDir, `split_${timestamp}_${baseFileName}_part${i + 1}.mp4`);
       
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
-          .seekInput(startTime)
-          .duration(segmentDuration)
+          .setStartTime(startTime)
+          .setDuration(segmentDuration)
+          .outputOptions([
+            '-c:v libx264',
+            '-c:a aac',
+            '-preset fast',
+            '-movflags +faststart'
+          ])
           .output(outputPath)
-          .on('end', resolve)
-          .on('error', reject)
+          .on('start', (cmd) => {
+            console.log(`FFmpeg 명령어 실행 (파트 ${i + 1}/${totalParts}):`, cmd);
+          })
+          .on('progress', (progress) => {
+            console.log(`파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+          })
+          .on('end', () => {
+            console.log(`파트 ${i + 1} 완료`);
+            resolve();
+          })
+          .on('error', (err) => {
+            console.error(`파트 ${i + 1} 오류:`, err);
+            reject(err);
+          })
           .run();
       });
       
       // 분할된 파일 크기 확인
       const partStats = await fs.stat(outputPath);
-      const partSizeMB = Math.round(partStats.size / (1024 * 1024));
+      const partSizeMB = (partStats.size / (1024 * 1024)).toFixed(2);
       
       parts.push({
         partNumber: i + 1,
-        size: partSizeMB,
+        size: parseFloat(partSizeMB),
         duration: segmentDuration,
         startTime: startTime,
         outputPath: `/output/${path.basename(outputPath)}`

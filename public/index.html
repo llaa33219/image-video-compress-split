@@ -622,8 +622,8 @@
 
         // 파일 정보 표시
         function showFileInfo(file) {
-            const sizeKB = Math.round(file.size / 1024);
-            const sizeMB = Math.round(file.size / (1024 * 1024));
+            const sizeKB = (file.size / 1024).toFixed(2);
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
             
             console.log(`선택된 파일: ${file.name} (${sizeKB}KB / ${sizeMB}MB)`);
             
@@ -631,10 +631,18 @@
             const activeTab = document.querySelector('.tab-content.active');
             const uploadArea = activeTab.querySelector('.upload-area');
             
+            // 크기에 따라 적절한 단위로 표시
+            let displaySize;
+            if (parseFloat(sizeMB) >= 1) {
+                displaySize = `${sizeMB} MB`;
+            } else {
+                displaySize = `${sizeKB} KB`;
+            }
+            
             uploadArea.innerHTML = `
                 <div class="upload-icon">📁</div>
                 <div class="upload-text">선택된 파일: ${file.name}</div>
-                <div class="upload-subtext">크기: ${sizeKB}KB (${sizeMB}MB) | 형식: ${file.type}</div>
+                <div class="upload-subtext">크기: ${displaySize} | 형식: ${file.type || '알 수 없음'}</div>
                 <div class="upload-subtext" style="margin-top: 10px; color: #667eea; cursor: pointer;" onclick="resetFileInput()">다른 파일 선택</div>
             `;
         }
@@ -786,6 +794,26 @@
             }
         }
 
+        // 크기 포맷팅 함수
+        function formatSize(size, defaultUnit) {
+            if (!size && size !== 0) return 'N/A';
+            
+            // defaultUnit이 'MB'면 MB 단위로 처리, 아니면 KB 단위로 처리
+            if (defaultUnit === 'MB') {
+                // MB 단위
+                if (size >= 1000) {
+                    return `${(size / 1000).toFixed(2)} GB`;
+                }
+                return `${parseFloat(size).toFixed(2)} MB`;
+            } else {
+                // KB 단위
+                if (size >= 1024) {
+                    return `${(size / 1024).toFixed(2)} MB`;
+                }
+                return `${parseFloat(size).toFixed(2)} KB`;
+            }
+        }
+
         // 결과 표시
         function showResult(result, status) {
             const container = document.getElementById('result-container');
@@ -802,20 +830,25 @@
                 statusEl.textContent = '성공';
                 statusEl.className = 'result-status success';
                 
+                // 현재 탭에 따라 단위 결정 (이미지는 KB, 영상은 MB)
+                const activeTab = document.querySelector('.tab-content.active');
+                const isImageTab = activeTab.id === 'image-tab';
+                const sizeUnit = isImageTab ? 'KB' : 'MB';
+                
                 // 기본 정보 표시
                 infoEl.innerHTML = `
                     <div class="info-item">
                         <div class="info-label">원본 크기</div>
-                        <div class="info-value">${result.originalSize}${result.originalSize > 1000 ? 'MB' : 'KB'}</div>
+                        <div class="info-value">${formatSize(result.originalSize, sizeUnit)}</div>
                     </div>
                     <div class="info-item">
                         <div class="info-label">처리 후 크기</div>
-                        <div class="info-value">${result.compressedSize || result.totalParts}${result.compressedSize ? (result.compressedSize > 1000 ? 'MB' : 'KB') : '개 파일'}</div>
+                        <div class="info-value">${result.compressedSize ? formatSize(result.compressedSize, sizeUnit) : (result.totalParts + '개 파일')}</div>
                     </div>
                     ${result.compressionRatio ? `
                     <div class="info-item">
                         <div class="info-label">압축률</div>
-                        <div class="info-value">${result.compressionRatio}%</div>
+                        <div class="info-value">${parseFloat(result.compressionRatio).toFixed(1)}%</div>
                     </div>
                     ` : ''}
                 `;
@@ -831,16 +864,16 @@
                     ).join('');
                 }
                 
-                // 분할된 파일 목록
-                if (result.parts && result.parts.length > 1) {
+                // 분할된 파일 목록 (1개 파일도 표시)
+                if (result.parts && result.parts.length >= 1) {
                     partsEl.innerHTML = result.parts.map(part => `
                         <div class="part-item">
                             <div class="part-info">
                                 <div class="part-title">파트 ${part.partNumber}</div>
                                 <div class="part-details">
-                                    크기: ${part.size}MB | 
+                                    크기: ${formatSize(part.size, 'MB')} | 
                                     길이: ${Math.round(part.duration)}초
-                                    ${part.startTime ? ` | 시작: ${Math.round(part.startTime)}초` : ''}
+                                    ${part.startTime !== undefined ? ` | 시작: ${Math.round(part.startTime)}초` : ''}
                                 </div>
                                 ${part.qualityChange ? `
                                     <div class="quality-change">

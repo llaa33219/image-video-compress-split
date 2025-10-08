@@ -19,25 +19,25 @@ async function detectWebMQualityChange(inputPath, targetSizeMB) {
     
     // 원본 파일 정보
     const originalStats = await fs.stat(inputPath);
-    const originalSizeMB = Math.round(originalStats.size / (1024 * 1024));
+    const originalSizeMB = (originalStats.size / (1024 * 1024)).toFixed(2);
     
     // WebM 파일 정보 가져오기
     const webmInfo = await getWebMInfo(inputPath);
     
     // 이미 목표 용량 이하인 경우
-    if (originalSizeMB <= targetSizeMB) {
+    if (parseFloat(originalSizeMB) <= targetSizeMB) {
       const outputPath = path.join(outputDir, `webm_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
       return {
         success: true,
         message: `WebM 파일이 이미 목표 용량(${targetSizeMB}MB) 이하입니다.`,
-        originalSize: originalSizeMB,
+        originalSize: parseFloat(originalSizeMB),
         totalParts: 1,
         qualityChanges: [],
         parts: [{
           partNumber: 1,
-          size: originalSizeMB,
+          size: parseFloat(originalSizeMB),
           duration: webmInfo.duration,
           outputPath: `/output/${path.basename(outputPath)}`
         }],
@@ -71,12 +71,13 @@ async function detectWebMQualityChange(inputPath, targetSizeMB) {
     
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
-      const outputPath = path.join(outputDir, `webm_${Date.now()}_${baseFileName}_part${i + 1}.webm`);
+      const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
+      const outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
       
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
-          .seekInput(segment.startTime)
-          .duration(segment.duration)
+          .setStartTime(segment.startTime)
+          .setDuration(segment.duration)
           .outputOptions([
             '-c:v libvpx-vp9',
             '-c:a libopus',
@@ -84,18 +85,30 @@ async function detectWebMQualityChange(inputPath, targetSizeMB) {
             '-crf 30'
           ])
           .output(outputPath)
-          .on('end', resolve)
-          .on('error', reject)
+          .on('start', (cmd) => {
+            console.log(`FFmpeg 명령어 실행 (WebM 파트 ${i + 1}/${segments.length}):`, cmd);
+          })
+          .on('progress', (progress) => {
+            console.log(`WebM 파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+          })
+          .on('end', () => {
+            console.log(`WebM 파트 ${i + 1} 완료`);
+            resolve();
+          })
+          .on('error', (err) => {
+            console.error(`WebM 파트 ${i + 1} 오류:`, err);
+            reject(err);
+          })
           .run();
       });
       
       // 분할된 파일 크기 확인
       const partStats = await fs.stat(outputPath);
-      const partSizeMB = Math.round(partStats.size / (1024 * 1024));
+      const partSizeMB = (partStats.size / (1024 * 1024)).toFixed(2);
       
       parts.push({
         partNumber: i + 1,
-        size: partSizeMB,
+        size: parseFloat(partSizeMB),
         duration: segment.duration,
         startTime: segment.startTime,
         endTime: segment.endTime,
@@ -107,7 +120,7 @@ async function detectWebMQualityChange(inputPath, targetSizeMB) {
     return {
       success: true,
       message: `WebM 파일이 ${parts.length}개 구간으로 분할되었습니다. (화질 변경 ${qualityChanges.length}개 감지)`,
-      originalSize: originalSizeMB,
+      originalSize: parseFloat(originalSizeMB),
       totalParts: parts.length,
       qualityChanges: qualityChanges,
       parts: parts,

@@ -15,18 +15,18 @@ async function compressImage(inputPath, targetSizeKB) {
     
     // 원본 파일 정보
     const originalStats = await fs.stat(inputPath);
-    const originalSizeKB = Math.round(originalStats.size / 1024);
+    const originalSizeKB = (originalStats.size / 1024).toFixed(2);
     
     // 이미 목표 용량 이하인 경우
-    if (originalSizeKB <= targetSizeKB) {
+    if (parseFloat(originalSizeKB) <= targetSizeKB) {
       const outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
       await fs.copy(inputPath, outputPath);
       
       return {
         success: true,
         message: `이미지가 이미 목표 용량(${targetSizeKB}KB) 이하입니다.`,
-        originalSize: originalSizeKB,
-        compressedSize: originalSizeKB,
+        originalSize: parseFloat(originalSizeKB),
+        compressedSize: parseFloat(originalSizeKB),
         compressionRatio: 0,
         outputPath: `/output/${path.basename(outputPath)}`,
         action: 'copied'
@@ -61,9 +61,9 @@ async function compressImage(inputPath, targetSizeKB) {
       
       // 압축된 파일 크기 확인
       const compressedStats = await fs.stat(outputPath);
-      compressedSizeKB = Math.round(compressedStats.size / 1024);
+      compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
       
-      if (compressedSizeKB <= targetSizeKB) {
+      if (parseFloat(compressedSizeKB) <= targetSizeKB) {
         bestQuality = quality;
         minQuality = quality + 1;
       } else {
@@ -80,16 +80,16 @@ async function compressImage(inputPath, targetSizeKB) {
       .toFile(outputPath);
     
     const finalStats = await fs.stat(outputPath);
-    const finalSizeKB = Math.round(finalStats.size / 1024);
+    const finalSizeKB = (finalStats.size / 1024).toFixed(2);
     
-    const compressionRatio = Math.round(((originalSizeKB - finalSizeKB) / originalSizeKB) * 100);
+    const compressionRatio = (((parseFloat(originalSizeKB) - parseFloat(finalSizeKB)) / parseFloat(originalSizeKB)) * 100).toFixed(1);
     
     return {
       success: true,
       message: `이미지가 성공적으로 압축되었습니다.`,
-      originalSize: originalSizeKB,
-      compressedSize: finalSizeKB,
-      compressionRatio: compressionRatio,
+      originalSize: parseFloat(originalSizeKB),
+      compressedSize: parseFloat(finalSizeKB),
+      compressionRatio: parseFloat(compressionRatio),
       quality: bestQuality,
       dimensions: `${width}x${height}`,
       format: format,
