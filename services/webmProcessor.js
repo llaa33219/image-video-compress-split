@@ -254,13 +254,13 @@ async function detectQualityChanges(inputPath) {
     ffmpeg(inputPath)
       .outputOptions([
         '-f null',
-        '-',
         '-threads 0',
         '-skip_loop_filter nokey',
         '-skip_idct nokey',
         '-skip_frame nokey',
         '-v error' // 에러만 출력하여 로그 노이즈 감소
       ])
+      .output('-') // 명시적으로 출력 지정
       .on('stderr', (stderrLine) => {
         try {
           // 타임스탬프 추출

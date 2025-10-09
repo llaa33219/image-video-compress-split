@@ -50,40 +50,62 @@ async function compressVideo(inputPath, targetSizeKB) {
     
     const outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
     
-    // 영상 압축
+    // 영상 압축 (WebM 파일 고려)
+    const isWebM = path.extname(inputPath).toLowerCase() === '.webm';
+    
     await new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
-        .videoBitrate(targetBitrate)
-        .audioBitrate('128k')
-        .outputOptions([
-          '-c:v libx264',
-          '-c:a aac',
-          '-preset ultrafast', // 속도 우선 (Railway 환경 고려)
-          '-crf 23',
-          '-maxrate ' + targetBitrate + 'k',
-          '-bufsize ' + (targetBitrate * 2) + 'k',
-          '-movflags +faststart',
-          '-threads 0', // 모든 CPU 코어 사용
-          '-tune zerolatency', // 지연 최소화
-          '-profile:v baseline', // 호환성 향상
-          '-level 3.0'
-        ])
-        .output(outputPath)
-        .on('start', (cmd) => {
-          console.log('FFmpeg 명령어 실행:', cmd);
-        })
-        .on('progress', (progress) => {
-          console.log(`압축 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
-        })
-        .on('end', () => {
-          console.log('압축 완료');
-          resolve();
-        })
-        .on('error', (err) => {
-          console.error('압축 오류:', err);
-          reject(err);
-        })
-        .run();
+      const tryCompress = (codecOptions) => {
+        ffmpeg(inputPath)
+          .videoBitrate(targetBitrate)
+          .audioBitrate('128k')
+          .outputOptions(codecOptions)
+          .output(outputPath)
+          .on('start', (cmd) => {
+            console.log('FFmpeg 명령어 실행:', cmd);
+          })
+          .on('progress', (progress) => {
+            console.log(`압축 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+          })
+          .on('end', () => {
+            console.log('압축 완료');
+            resolve();
+          })
+          .on('error', (err) => {
+            console.warn('압축 실패, 대체 코덱으로 재시도:', err.message);
+            if (isWebM && codecOptions.includes('libx264')) {
+              // WebM 파일인 경우 VP8로 재시도
+              tryCompress([
+                '-c:v libvpx',
+                '-c:a libvorbis',
+                '-preset ultrafast',
+                '-crf 30',
+                '-maxrate ' + targetBitrate + 'k',
+                '-bufsize ' + (targetBitrate * 2) + 'k',
+                '-threads 0'
+              ]);
+            } else {
+              reject(err);
+            }
+          })
+          .run();
+      };
+
+      // 기본 코덱 옵션
+      const defaultOptions = [
+        '-c:v libx264',
+        '-c:a aac',
+        '-preset ultrafast',
+        '-crf 23',
+        '-maxrate ' + targetBitrate + 'k',
+        '-bufsize ' + (targetBitrate * 2) + 'k',
+        '-movflags +faststart',
+        '-threads 0',
+        '-tune zerolatency',
+        '-profile:v baseline',
+        '-level 3.0'
+      ];
+
+      tryCompress(defaultOptions);
     });
     
     // 압축된 파일 크기 확인
@@ -156,6 +178,7 @@ async function splitVideo(inputPath, targetSizeKB) {
     // 분할할 구간 수 계산
     const totalParts = Math.ceil(parseFloat(originalSizeKB) / targetSizeKB);
     const segmentDuration = videoInfo.duration / totalParts;
+    const isWebM = path.extname(inputPath).toLowerCase() === '.webm';
     
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
@@ -167,35 +190,53 @@ async function splitVideo(inputPath, targetSizeKB) {
       const outputPath = path.join(outputDir, `split_${timestamp}_${baseFileName}_part${i + 1}.mp4`);
       
       await new Promise((resolve, reject) => {
-        ffmpeg(inputPath)
-          .setStartTime(startTime)
-          .setDuration(segmentDuration)
-          .outputOptions([
-            '-c:v libx264',
-            '-c:a aac',
-            '-preset ultrafast', // 속도 우선
-            '-movflags +faststart',
-            '-threads 0', // 모든 CPU 코어 사용
-            '-tune zerolatency', // 지연 최소화
-            '-profile:v baseline', // 호환성 향상
-            '-level 3.0'
-          ])
-          .output(outputPath)
-          .on('start', (cmd) => {
-            console.log(`FFmpeg 명령어 실행 (파트 ${i + 1}/${totalParts}):`, cmd);
-          })
-          .on('progress', (progress) => {
-            console.log(`파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
-          })
-          .on('end', () => {
-            console.log(`파트 ${i + 1} 완료`);
-            resolve();
-          })
-          .on('error', (err) => {
-            console.error(`파트 ${i + 1} 오류:`, err);
-            reject(err);
-          })
-          .run();
+        const trySplit = (codecOptions) => {
+          ffmpeg(inputPath)
+            .setStartTime(startTime)
+            .setDuration(segmentDuration)
+            .outputOptions(codecOptions)
+            .output(outputPath)
+            .on('start', (cmd) => {
+              console.log(`FFmpeg 명령어 실행 (파트 ${i + 1}/${totalParts}):`, cmd);
+            })
+            .on('progress', (progress) => {
+              console.log(`파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+            })
+            .on('end', () => {
+              console.log(`파트 ${i + 1} 완료`);
+              resolve();
+            })
+            .on('error', (err) => {
+              console.warn(`파트 ${i + 1} 실패, 대체 코덱으로 재시도:`, err.message);
+              if (isWebM && codecOptions.includes('libx264')) {
+                // WebM 파일인 경우 VP8로 재시도
+                trySplit([
+                  '-c:v libvpx',
+                  '-c:a libvorbis',
+                  '-preset ultrafast',
+                  '-movflags +faststart',
+                  '-threads 0'
+                ]);
+              } else {
+                reject(err);
+              }
+            })
+            .run();
+        };
+
+        // 기본 코덱 옵션
+        const defaultOptions = [
+          '-c:v libx264',
+          '-c:a aac',
+          '-preset ultrafast',
+          '-movflags +faststart',
+          '-threads 0',
+          '-tune zerolatency',
+          '-profile:v baseline',
+          '-level 3.0'
+        ];
+
+        trySplit(defaultOptions);
       });
       
       // 분할된 파일 크기 확인

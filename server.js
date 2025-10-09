@@ -12,6 +12,11 @@ const { detectWebMQualityChange } = require('./services/webmProcessor');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Railway 환경에서 프록시 신뢰 설정
+if (process.env.RAILWAY_ENVIRONMENT) {
+  app.set('trust proxy', 1);
+}
+
 // Railway 환경 최적화 설정
 if (process.env.RAILWAY_ENVIRONMENT) {
   // 메모리 사용량 모니터링
