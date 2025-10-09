@@ -65,52 +65,61 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       });
     }
     
+    // 각 세그먼트의 목표 비트레이트 계산 (안전 마진 90%)
+    const calculateBitrate = (duration) => {
+      const audioBitrate = 128;
+      const audioSizeKB = (audioBitrate * duration) / 8;
+      const videoTargetSizeKB = (targetSizeKB * 0.90) - audioSizeKB;
+      let bitrate = Math.floor((videoTargetSizeKB * 8) / duration);
+      
+      // VP9의 최소 비트레이트 보장
+      if (bitrate < 150) {
+        console.log(`경고: 계산된 비트레이트(${bitrate}kbps)가 너무 낮아 150kbps로 조정`);
+        bitrate = 150;
+      }
+      
+      return bitrate;
+    };
+    
+    console.log(`WebM 분할: ${segments.length}개 세그먼트 처리`);
+    
     // 각 세그먼트를 개별 파일로 분할
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
     
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i];
-      const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
+    // 병렬 처리를 위한 함수
+    const processSegment = async (i, segment) => {
+      const timestamp = Date.now() + i * 100; // 각 파일마다 고유한 타임스탬프
       const outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
+      const targetBitrate = calculateBitrate(segment.duration);
       
-      const partInfo = await new Promise((resolve, reject) => {
+      console.log(`WebM 파트 ${i + 1}: ${segment.duration.toFixed(2)}초, 목표 비트레이트 ${targetBitrate}kbps`);
+      
+      await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .setStartTime(segment.startTime)
           .setDuration(segment.duration)
           .outputOptions([
             '-c:v libvpx-vp9',
-            '-c:a libopus',
-            '-b:v 0',
+            '-b:v ' + targetBitrate + 'k',
             '-crf 30',
-            '-threads 0',  // 멀티스레딩 활성화
-            '-speed 4',     // 속도 우선 (0-4, 4가 가장 빠름)
-            '-tile-columns 2',
-            '-frame-parallel 1',
-            '-row-mt 1'
+            '-row-mt 1', // 멀티스레딩 활성화
+            '-cpu-used 2', // 인코딩 속도 향상 (0=느리고 고품질, 5=빠르고 저품질)
+            '-c:a libopus',
+            '-b:a 128k'
           ])
           .output(outputPath)
           .on('start', (cmd) => {
             console.log(`FFmpeg 명령어 실행 (WebM 파트 ${i + 1}/${segments.length}):`, cmd);
           })
           .on('progress', (progress) => {
-            console.log(`WebM 파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+            if (progress.percent) {
+              console.log(`WebM 파트 ${i + 1} 처리 중: ${progress.percent.toFixed(1)}%`);
+            }
           })
-          .on('end', async () => {
+          .on('end', () => {
             console.log(`WebM 파트 ${i + 1} 완료`);
-            // 분할된 파일 크기 확인
-            const partStats = await fs.stat(outputPath);
-            const partSizeKB = (partStats.size / 1024).toFixed(2);
-            
-            resolve({
-              partNumber: i + 1,
-              size: parseFloat(partSizeKB),
-              duration: segment.duration,
-              startTime: segment.startTime,
-              endTime: segment.endTime,
-              qualityChange: segment.qualityChange,
-              outputPath: `/output/${path.basename(outputPath)}`
-            });
+            resolve();
           })
           .on('error', (err) => {
             console.error(`WebM 파트 ${i + 1} 오류:`, err);
@@ -119,8 +128,38 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           .run();
       });
       
-      parts.push(partInfo);
+      // 분할된 파일 크기 확인
+      const partStats = await fs.stat(outputPath);
+      const partSizeKB = (partStats.size / 1024).toFixed(2);
+      
+      console.log(`WebM 파트 ${i + 1}: ${partSizeKB}KB (목표: ${targetSizeKB}KB, 달성률: ${((parseFloat(partSizeKB) / targetSizeKB) * 100).toFixed(1)}%)`);
+      
+      return {
+        partNumber: i + 1,
+        size: parseFloat(partSizeKB),
+        duration: segment.duration,
+        startTime: segment.startTime,
+        endTime: segment.endTime,
+        qualityChange: segment.qualityChange,
+        outputPath: `/output/${path.basename(outputPath)}`
+      };
+    };
+    
+    // 병렬 처리 (동시에 2개씩 처리하여 시스템 부하 조절)
+    const maxConcurrent = 2;
+    for (let i = 0; i < segments.length; i += maxConcurrent) {
+      const batch = [];
+      for (let j = 0; j < maxConcurrent && i + j < segments.length; j++) {
+        const segmentIndex = i + j;
+        batch.push(processSegment(segmentIndex, segments[segmentIndex]));
+      }
+      
+      const batchResults = await Promise.all(batch);
+      parts.push(...batchResults);
     }
+    
+    // 파트 번호로 정렬
+    parts.sort((a, b) => a.partNumber - b.partNumber);
     
     return {
       success: true,
