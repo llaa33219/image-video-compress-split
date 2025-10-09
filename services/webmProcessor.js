@@ -69,13 +69,12 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
     
-    const partProcessingPromises = [];
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
       const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
       const outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
       
-      const promise = new Promise((resolve, reject) => {
+      await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .setStartTime(segment.startTime)
           .setDuration(segment.duration)
@@ -84,8 +83,9 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
             '-c:a libopus',
             '-b:v 0',
             '-crf 30',
-            '-deadline realtime', // CPU 사용률을 높여 속도 향상
-            '-threads 8' // 멀티코어 활용
+            '-cpu-used 4',  // VP9 속도 최적화 (0=느림/고품질, 5=빠름/저품질, 4=균형)
+            '-row-mt 1',     // VP9 멀티스레딩 활성화
+            '-threads 0'     // 자동 스레드 최적화
           ])
           .output(outputPath)
           .on('start', (cmd) => {
@@ -94,21 +94,8 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           .on('progress', (progress) => {
             console.log(`WebM 파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
           })
-          .on('end', async () => {
+          .on('end', () => {
             console.log(`WebM 파트 ${i + 1} 완료`);
-            // 분할된 파일 크기 확인
-            const partStats = await fs.stat(outputPath);
-            const partSizeKB = (partStats.size / 1024).toFixed(2);
-            
-            parts.push({
-              partNumber: i + 1,
-              size: parseFloat(partSizeKB),
-              duration: segment.duration,
-              startTime: segment.startTime,
-              endTime: segment.endTime,
-              qualityChange: segment.qualityChange,
-              outputPath: `/output/${path.basename(outputPath)}`
-            });
             resolve();
           })
           .on('error', (err) => {
@@ -117,14 +104,21 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           })
           .run();
       });
-      partProcessingPromises.push(promise);
+      
+      // 분할된 파일 크기 확인
+      const partStats = await fs.stat(outputPath);
+      const partSizeKB = (partStats.size / 1024).toFixed(2);
+      
+      parts.push({
+        partNumber: i + 1,
+        size: parseFloat(partSizeKB),
+        duration: segment.duration,
+        startTime: segment.startTime,
+        endTime: segment.endTime,
+        qualityChange: segment.qualityChange,
+        outputPath: `/output/${path.basename(outputPath)}`
+      });
     }
-
-    // 모든 분할 작업을 병렬로 실행
-    await Promise.all(partProcessingPromises);
-
-    // 파트 번호 순서대로 정렬
-    parts.sort((a, b) => a.partNumber - b.partNumber);
     
     return {
       success: true,

@@ -39,49 +39,61 @@ async function compressImage(inputPath, targetSizeKB) {
     
     // 압축 품질 설정 (초기값)
     let quality = 80;
-    let outputPath;
     let compressedSizeKB;
     
-    // 이진 탐색으로 최적 품질 찾기
+    // 이진 탐색으로 최적 품질 찾기 (메모리 버퍼 사용으로 디스크 I/O 최소화)
     let minQuality = 10;
     let maxQuality = 100;
     let bestQuality = quality;
-    let bestBuffer = null;
     
     while (minQuality <= maxQuality) {
       quality = Math.floor((minQuality + maxQuality) / 2);
       
-      // 이미지를 버퍼로 압축하여 디스크 I/O 감소
-      const buffer = await sharp(inputPath)
-        .jpeg({ quality: quality })
-        .png({ quality: quality })
-        .webp({ quality: quality })
-        .toBuffer();
+      // 메모리 버퍼로 압축 (디스크 I/O 제거로 속도 향상)
+      let buffer;
+      if (format === 'png') {
+        buffer = await sharp(inputPath)
+          .png({ quality: quality, compressionLevel: 9 })
+          .toBuffer();
+      } else if (format === 'webp') {
+        buffer = await sharp(inputPath)
+          .webp({ quality: quality })
+          .toBuffer();
+      } else {
+        // JPEG 또는 기타 형식은 JPEG로 변환
+        buffer = await sharp(inputPath)
+          .jpeg({ quality: quality, mozjpeg: true })
+          .toBuffer();
+      }
       
+      // 버퍼 크기 확인
       compressedSizeKB = (buffer.length / 1024).toFixed(2);
       
       if (parseFloat(compressedSizeKB) <= targetSizeKB) {
         bestQuality = quality;
-        bestBuffer = buffer;
         minQuality = quality + 1;
       } else {
         maxQuality = quality - 1;
       }
     }
     
-    // 최종 압축
-    if (!bestBuffer) {
-      // 목표 용량을 만족하는 압축 결과를 찾지 못한 경우, 가능한 최저 품질로 압축
-      bestQuality = 10;
-      bestBuffer = await sharp(inputPath)
-        .jpeg({ quality: bestQuality })
-        .png({ quality: bestQuality })
-        .webp({ quality: bestQuality })
-        .toBuffer();
-    }
+    // 최종 압축 (형식별 최적화 적용)
+    const outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
     
-    outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
-    await fs.writeFile(outputPath, bestBuffer);
+    if (format === 'png') {
+      await sharp(inputPath)
+        .png({ quality: bestQuality, compressionLevel: 9 })
+        .toFile(outputPath);
+    } else if (format === 'webp') {
+      await sharp(inputPath)
+        .webp({ quality: bestQuality })
+        .toFile(outputPath);
+    } else {
+      // JPEG 또는 기타 형식은 JPEG로 변환 (mozjpeg으로 더 나은 압축)
+      await sharp(inputPath)
+        .jpeg({ quality: bestQuality, mozjpeg: true })
+        .toFile(outputPath);
+    }
     
     const finalStats = await fs.stat(outputPath);
     const finalSizeKB = (finalStats.size / 1024).toFixed(2);
