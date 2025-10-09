@@ -2,6 +2,7 @@ const ffmpeg = require('fluent-ffmpeg');
 const ffmpegStatic = require('ffmpeg-static');
 const fs = require('fs-extra');
 const path = require('path');
+const { getCachedMetadata, setCachedMetadata } = require('./cacheManager');
 
 // ffmpeg 경로 설정
 ffmpeg.setFfmpegPath(ffmpegStatic);
@@ -37,15 +38,19 @@ async function compressVideo(inputPath, targetSizeKB) {
       };
     }
     
-    // 영상 정보 가져오기
-    const videoInfo = await getVideoInfo(inputPath);
+    // 영상 정보 가져오기 (캐싱 적용)
+    let videoInfo = getCachedMetadata(inputPath);
+    if (!videoInfo) {
+      videoInfo = await getVideoInfo(inputPath);
+      setCachedMetadata(inputPath, videoInfo);
+    }
     
     // 목표 비트레이트 계산 (kbps)
     const targetBitrate = Math.floor((targetSizeKB * 8) / videoInfo.duration);
     
     const outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
     
-    // 영상 압축 (속도 최적화)
+    // 영상 압축
     await new Promise((resolve, reject) => {
       ffmpeg(inputPath)
         .videoBitrate(targetBitrate)
@@ -53,12 +58,15 @@ async function compressVideo(inputPath, targetSizeKB) {
         .outputOptions([
           '-c:v libx264',
           '-c:a aac',
-          '-preset veryfast',  // fast → veryfast로 변경 (속도 2-3배 향상)
+          '-preset ultrafast', // 속도 우선 (Railway 환경 고려)
           '-crf 23',
           '-maxrate ' + targetBitrate + 'k',
           '-bufsize ' + (targetBitrate * 2) + 'k',
           '-movflags +faststart',
-          '-threads 0'  // 자동 스레드 최적화 (Railway CPU 활용)
+          '-threads 0', // 모든 CPU 코어 사용
+          '-tune zerolatency', // 지연 최소화
+          '-profile:v baseline', // 호환성 향상
+          '-level 3.0'
         ])
         .output(outputPath)
         .on('start', (cmd) => {
@@ -118,8 +126,12 @@ async function splitVideo(inputPath, targetSizeKB) {
     const originalStats = await fs.stat(inputPath);
     const originalSizeKB = (originalStats.size / 1024).toFixed(2);
     
-    // 영상 정보 가져오기
-    const videoInfo = await getVideoInfo(inputPath);
+    // 영상 정보 가져오기 (캐싱 적용)
+    let videoInfo = getCachedMetadata(inputPath);
+    if (!videoInfo) {
+      videoInfo = await getVideoInfo(inputPath);
+      setCachedMetadata(inputPath, videoInfo);
+    }
     
     // 이미 목표 용량 이하인 경우
     if (parseFloat(originalSizeKB) <= targetSizeKB) {
@@ -161,9 +173,12 @@ async function splitVideo(inputPath, targetSizeKB) {
           .outputOptions([
             '-c:v libx264',
             '-c:a aac',
-            '-preset veryfast',  // 속도 최적화
+            '-preset ultrafast', // 속도 우선
             '-movflags +faststart',
-            '-threads 0'  // 자동 스레드 최적화
+            '-threads 0', // 모든 CPU 코어 사용
+            '-tune zerolatency', // 지연 최소화
+            '-profile:v baseline', // 호환성 향상
+            '-level 3.0'
           ])
           .output(outputPath)
           .on('start', (cmd) => {

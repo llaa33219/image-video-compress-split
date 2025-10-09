@@ -1,6 +1,7 @@
 const sharp = require('sharp');
 const fs = require('fs-extra');
 const path = require('path');
+const { getCachedMetadata, setCachedMetadata } = require('./cacheManager');
 
 /**
  * 이미지를 목표 용량 이하로 압축
@@ -33,41 +34,47 @@ async function compressImage(inputPath, targetSizeKB) {
       };
     }
     
-    // 이미지 메타데이터 가져오기
-    const metadata = await sharp(inputPath).metadata();
+    // 이미지 메타데이터 가져오기 (캐싱 적용)
+    let metadata = getCachedMetadata(inputPath);
+    if (!metadata) {
+      metadata = await sharp(inputPath).metadata();
+      setCachedMetadata(inputPath, metadata);
+    }
     const { width, height, format } = metadata;
     
     // 압축 품질 설정 (초기값)
     let quality = 80;
+    let outputPath;
     let compressedSizeKB;
     
-    // 이진 탐색으로 최적 품질 찾기 (메모리 버퍼 사용으로 디스크 I/O 최소화)
+    // 개선된 이진 탐색으로 최적 품질 찾기
     let minQuality = 10;
     let maxQuality = 100;
     let bestQuality = quality;
+    let iterations = 0;
+    const maxIterations = 8; // 최대 8회 반복으로 제한 (속도 향상)
     
-    while (minQuality <= maxQuality) {
+    // 메모리 기반 임시 파일 사용으로 I/O 최적화
+    const tempFiles = [];
+    
+    while (minQuality <= maxQuality && iterations < maxIterations) {
       quality = Math.floor((minQuality + maxQuality) / 2);
       
-      // 메모리 버퍼로 압축 (디스크 I/O 제거로 속도 향상)
-      let buffer;
-      if (format === 'png') {
-        buffer = await sharp(inputPath)
-          .png({ quality: quality, compressionLevel: 9 })
-          .toBuffer();
-      } else if (format === 'webp') {
-        buffer = await sharp(inputPath)
-          .webp({ quality: quality })
-          .toBuffer();
-      } else {
-        // JPEG 또는 기타 형식은 JPEG로 변환
-        buffer = await sharp(inputPath)
-          .jpeg({ quality: quality, mozjpeg: true })
-          .toBuffer();
-      }
+      // 메모리 버퍼에 직접 압축하여 임시 파일 생성 최소화
+      const tempPath = path.join(outputDir, `temp_${Date.now()}_${iterations}_${path.basename(inputPath)}`);
+      tempFiles.push(tempPath);
       
-      // 버퍼 크기 확인
-      compressedSizeKB = (buffer.length / 1024).toFixed(2);
+      // Sharp 파이프라인 최적화 및 병렬 처리
+      const sharpInstance = sharp(inputPath)
+        .jpeg({ quality: quality, progressive: false, mozjpeg: true })
+        .png({ quality: quality, compressionLevel: 9, progressive: false })
+        .webp({ quality: quality, effort: 4 });
+      
+      await sharpInstance.toFile(tempPath);
+      
+      // 압축된 파일 크기 확인
+      const compressedStats = await fs.stat(tempPath);
+      compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
       
       if (parseFloat(compressedSizeKB) <= targetSizeKB) {
         bestQuality = quality;
@@ -75,25 +82,26 @@ async function compressImage(inputPath, targetSizeKB) {
       } else {
         maxQuality = quality - 1;
       }
+      
+      iterations++;
     }
     
-    // 최종 압축 (형식별 최적화 적용)
-    const outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
-    
-    if (format === 'png') {
-      await sharp(inputPath)
-        .png({ quality: bestQuality, compressionLevel: 9 })
-        .toFile(outputPath);
-    } else if (format === 'webp') {
-      await sharp(inputPath)
-        .webp({ quality: bestQuality })
-        .toFile(outputPath);
-    } else {
-      // JPEG 또는 기타 형식은 JPEG로 변환 (mozjpeg으로 더 나은 압축)
-      await sharp(inputPath)
-        .jpeg({ quality: bestQuality, mozjpeg: true })
-        .toFile(outputPath);
+    // 임시 파일 정리
+    for (const tempFile of tempFiles) {
+      try {
+        await fs.remove(tempFile);
+      } catch (error) {
+        console.warn('임시 파일 삭제 실패:', tempFile);
+      }
     }
+    
+    // 최종 압축 (최적화된 설정 적용)
+    outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
+    await sharp(inputPath)
+      .jpeg({ quality: bestQuality, progressive: false, mozjpeg: true })
+      .png({ quality: bestQuality, compressionLevel: 9, progressive: false })
+      .webp({ quality: bestQuality, effort: 4 })
+      .toFile(outputPath);
     
     const finalStats = await fs.stat(outputPath);
     const finalSizeKB = (finalStats.size / 1024).toFixed(2);

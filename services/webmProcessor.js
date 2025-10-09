@@ -2,6 +2,7 @@ const ffmpeg = require('fluent-ffmpeg');
 const ffmpegStatic = require('ffmpeg-static');
 const fs = require('fs-extra');
 const path = require('path');
+const { getCachedMetadata, setCachedMetadata } = require('./cacheManager');
 
 // ffmpeg 경로 설정
 ffmpeg.setFfmpegPath(ffmpegStatic);
@@ -21,8 +22,12 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
     const originalStats = await fs.stat(inputPath);
     const originalSizeKB = (originalStats.size / 1024).toFixed(2);
     
-    // WebM 파일 정보 가져오기
-    const webmInfo = await getWebMInfo(inputPath);
+    // WebM 파일 정보 가져오기 (캐싱 적용)
+    let webmInfo = getCachedMetadata(inputPath);
+    if (!webmInfo) {
+      webmInfo = await getWebMInfo(inputPath);
+      setCachedMetadata(inputPath, webmInfo);
+    }
     
     // 이미 목표 용량 이하인 경우
     if (parseFloat(originalSizeKB) <= targetSizeKB) {
@@ -83,9 +88,12 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
             '-c:a libopus',
             '-b:v 0',
             '-crf 30',
-            '-cpu-used 4',  // VP9 속도 최적화 (0=느림/고품질, 5=빠름/저품질, 4=균형)
-            '-row-mt 1',     // VP9 멀티스레딩 활성화
-            '-threads 0'     // 자동 스레드 최적화
+            '-threads 0', // 모든 CPU 코어 사용
+            '-speed 4', // VP9 인코딩 속도 향상
+            '-tile-columns 2', // 타일 병렬 처리
+            '-frame-parallel 1', // 프레임 병렬 처리
+            '-auto-alt-ref 0', // 참조 프레임 최적화
+            '-lag-in-frames 0' // 지연 최소화
           ])
           .output(outputPath)
           .on('start', (cmd) => {
@@ -146,29 +154,41 @@ async function detectQualityChanges(inputPath) {
     const qualityChanges = [];
     let previousBitrate = 0;
     let previousResolution = '';
+    let lastTimestamp = 0;
+    const minInterval = 5; // 최소 5초 간격으로만 변화 감지 (성능 향상)
     
     ffmpeg(inputPath)
       .outputOptions([
         '-f null',
-        '-'
+        '-',
+        '-threads 0', // 모든 CPU 코어 사용
+        '-skip_loop_filter nokey', // 키프레임만 처리하여 속도 향상
+        '-skip_idct nokey',
+        '-skip_frame nokey'
       ])
       .on('stderr', (stderrLine) => {
-        // 비트레이트 변화 감지
+        // 타임스탬프 추출
+        const timestampMatch = stderrLine.match(/time=(\d+:\d+:\d+\.\d+)/);
+        if (!timestampMatch) return;
+        
+        const timestamp = parseTimestamp(timestampMatch[1]);
+        
+        // 최소 간격 체크 (성능 최적화)
+        if (timestamp - lastTimestamp < minInterval) return;
+        lastTimestamp = timestamp;
+        
+        // 비트레이트 변화 감지 (임계값 상향 조정으로 노이즈 감소)
         const bitrateMatch = stderrLine.match(/bitrate:\s*(\d+\.?\d*)\s*kbits\/s/);
         if (bitrateMatch) {
           const currentBitrate = parseFloat(bitrateMatch[1]);
-          if (previousBitrate > 0 && Math.abs(currentBitrate - previousBitrate) > 100) {
-            // 비트레이트가 100kbps 이상 변화한 경우
-            const timestampMatch = stderrLine.match(/time=(\d+:\d+:\d+\.\d+)/);
-            if (timestampMatch) {
-              const timestamp = parseTimestamp(timestampMatch[1]);
-              qualityChanges.push({
-                timestamp,
-                type: 'bitrate_change',
-                from: previousBitrate,
-                to: currentBitrate
-              });
-            }
+          if (previousBitrate > 0 && Math.abs(currentBitrate - previousBitrate) > 200) {
+            // 비트레이트가 200kbps 이상 변화한 경우만 감지 (노이즈 감소)
+            qualityChanges.push({
+              timestamp,
+              type: 'bitrate_change',
+              from: previousBitrate,
+              to: currentBitrate
+            });
           }
           previousBitrate = currentBitrate;
         }
@@ -178,25 +198,23 @@ async function detectQualityChanges(inputPath) {
         if (resolutionMatch) {
           const currentResolution = resolutionMatch[0];
           if (previousResolution && currentResolution !== previousResolution) {
-            const timestampMatch = stderrLine.match(/time=(\d+:\d+:\d+\.\d+)/);
-            if (timestampMatch) {
-              const timestamp = parseTimestamp(timestampMatch[1]);
-              qualityChanges.push({
-                timestamp,
-                type: 'resolution_change',
-                from: previousResolution,
-                to: currentResolution
-              });
-            }
+            qualityChanges.push({
+              timestamp,
+              type: 'resolution_change',
+              from: previousResolution,
+              to: currentResolution
+            });
           }
           previousResolution = currentResolution;
         }
       })
       .on('end', () => {
-        // 중복 제거 및 정렬
-        const uniqueChanges = qualityChanges.filter((change, index, self) => 
-          index === self.findIndex(c => c.timestamp === change.timestamp)
-        ).sort((a, b) => a.timestamp - b.timestamp);
+        // 중복 제거 및 정렬 (성능 최적화)
+        const uniqueChanges = qualityChanges
+          .filter((change, index, self) => 
+            index === self.findIndex(c => Math.abs(c.timestamp - change.timestamp) < 1)
+          )
+          .sort((a, b) => a.timestamp - b.timestamp);
         
         resolve(uniqueChanges);
       })
