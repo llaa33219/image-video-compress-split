@@ -4,18 +4,9 @@
 
 **외부 사이트에서 API로 호출하여 사용하는 것이 주요 목적입니다.**
 
-## 최근 업데이트 (2025-10-09)
+## 최근 업데이트 (2025-10-08)
 
-### 성능 최적화 (v2.0)
-- 🚀 **이미지 압축 속도 대폭 향상**: 버퍼 기반 처리로 디스크 I/O 최소화 (약 2-3배 빠름)
-- 🚀 **비디오 처리 하드웨어 가속**: NVIDIA NVENC, Intel QSV, AMD AMF, VAAPI 자동 감지 및 사용
-- 🚀 **멀티스레딩 최적화**: CPU 코어의 75%를 활용한 병렬 처리
-- 🚀 **VP9 WebM 인코딩 최적화**: realtime deadline, row-mt, tile-columns로 속도 향상 (약 3-5배 빠름)
-- 🚀 **FFmpeg 프리셋 개선**: fast → veryfast, zerolatency tune 적용
-- 🚀 **Sharp 최적화**: mozjpeg, adaptiveFiltering, effort 옵션으로 품질 유지하며 속도 향상
-- ✅ **정확도 유지**: 모든 최적화는 압축 정확도를 유지하면서 속도만 개선
-
-### 이전 업데이트 (2025-10-08)
+### 개선사항
 - ✅ **영상 분할 기능 수정**: FFmpeg 명령어 개선으로 영상 분할이 정상적으로 작동
 - ✅ **파일 크기 표시 개선**: 소수점 2자리까지 정확하게 표시 (KB/MB/GB 자동 변환)
 - ✅ **압축률 계산 정확도 향상**: 소수점 1자리까지 표시
@@ -131,54 +122,11 @@ npm start
 3. GitHub 저장소 연결
 4. 자동 배포 완료
 
-## 성능 최적화 상세
-
-### 이미지 압축 최적화
-1. **버퍼 기반 처리**: 이진 탐색 중 디스크에 파일을 쓰지 않고 메모리 버퍼로 처리
-2. **Sharp 최적화 옵션**:
-   - `mozjpeg: true` - Mozilla의 최적화된 JPEG 인코더 사용
-   - `compressionLevel: 9` - PNG 최대 압축
-   - `adaptiveFiltering: true` - PNG 적응형 필터링
-   - `effort: 4` - WebP 인코딩 노력도 (0-6, 4는 속도와 품질의 균형)
-
-### 비디오 압축 최적화
-1. **하드웨어 가속 자동 감지**:
-   - **NVIDIA NVENC** (가장 빠름): `h264_nvenc`, preset p1, low latency
-   - **Intel QSV**: `h264_qsv`, veryfast preset
-   - **AMD AMF**: `h264_amf`, speed quality
-   - **VAAPI** (Linux): `h264_vaapi`
-   - 하드웨어 가속 미지원 시 최적화된 소프트웨어 인코딩 사용
-
-2. **멀티스레딩**:
-   - CPU 코어의 75% 활용 (안정성 유지)
-   - FFmpeg threads 옵션 자동 설정
-
-3. **FFmpeg 최적화 옵션**:
-   - `preset veryfast` - 빠른 인코딩 (품질 유지)
-   - `tune zerolatency` - 지연 시간 최소화
-   - `keyint 60` - 키프레임 간격 최적화
-
-### WebM/VP9 최적화
-VP9은 원래 매우 느린 코덱이지만, 다음 옵션으로 속도 대폭 개선:
-- `deadline realtime` - 실시간 인코딩 모드
-- `cpu-used 5` - 가장 빠른 CPU 설정 (0-5)
-- `row-mt 1` - 행 기반 멀티스레딩
-- `tile-columns 2` - 타일 인코딩으로 병렬 처리
-- `frame-parallel 1` - 프레임 병렬 처리
-- `auto-alt-ref 0` - alt-ref 프레임 비활성화
-- `lag-in-frames 0` - 지연 프레임 제거
-
-### 예상 성능 향상
-- **이미지 압축**: 2-3배 속도 향상 (디스크 I/O 제거)
-- **비디오 압축 (하드웨어 가속)**: 5-10배 속도 향상
-- **비디오 압축 (소프트웨어)**: 1.5-2배 속도 향상
-- **WebM/VP9 처리**: 3-5배 속도 향상
-
 ## 기술 스택
 
 - **Backend**: Node.js, Express.js
-- **이미지 처리**: Sharp (libvips 기반)
-- **영상 처리**: FFmpeg (하드웨어 가속 지원)
+- **이미지 처리**: Sharp
+- **영상 처리**: FFmpeg
 - **파일 업로드**: Multer
 - **보안**: Helmet, CORS, Rate Limiting
 - **배포**: Railway

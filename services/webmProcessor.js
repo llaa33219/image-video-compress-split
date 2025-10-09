@@ -69,16 +69,13 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
     
-    // 멀티스레딩 최적화
-    const cpuCores = require('os').cpus().length;
-    const threads = Math.max(1, Math.floor(cpuCores * 0.75));
-    
+    const partProcessingPromises = [];
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
       const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
       const outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
       
-      await new Promise((resolve, reject) => {
+      const promise = new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .setStartTime(segment.startTime)
           .setDuration(segment.duration)
@@ -87,25 +84,31 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
             '-c:a libopus',
             '-b:v 0',
             '-crf 30',
-            '-deadline realtime', // 실시간 인코딩 모드로 속도 향상
-            '-cpu-used 5', // 0-5 범위, 5가 가장 빠름 (품질은 약간 감소)
-            '-row-mt 1', // 행 기반 멀티스레딩 활성화
-            `-threads ${threads}`, // 멀티스레딩
-            '-tile-columns 2', // 타일 인코딩으로 병렬 처리
-            '-frame-parallel 1', // 프레임 병렬 처리
-            '-auto-alt-ref 0', // alt-ref 프레임 비활성화로 속도 향상
-            '-lag-in-frames 0' // 지연 프레임 없음으로 속도 향상
+            '-deadline realtime', // CPU 사용률을 높여 속도 향상
+            '-threads 8' // 멀티코어 활용
           ])
           .output(outputPath)
           .on('start', (cmd) => {
             console.log(`FFmpeg 명령어 실행 (WebM 파트 ${i + 1}/${segments.length}):`, cmd);
-            console.log(`사용 중: VP9 (최적화), 스레드: ${threads}`);
           })
           .on('progress', (progress) => {
             console.log(`WebM 파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
           })
-          .on('end', () => {
+          .on('end', async () => {
             console.log(`WebM 파트 ${i + 1} 완료`);
+            // 분할된 파일 크기 확인
+            const partStats = await fs.stat(outputPath);
+            const partSizeKB = (partStats.size / 1024).toFixed(2);
+            
+            parts.push({
+              partNumber: i + 1,
+              size: parseFloat(partSizeKB),
+              duration: segment.duration,
+              startTime: segment.startTime,
+              endTime: segment.endTime,
+              qualityChange: segment.qualityChange,
+              outputPath: `/output/${path.basename(outputPath)}`
+            });
             resolve();
           })
           .on('error', (err) => {
@@ -114,21 +117,14 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           })
           .run();
       });
-      
-      // 분할된 파일 크기 확인
-      const partStats = await fs.stat(outputPath);
-      const partSizeKB = (partStats.size / 1024).toFixed(2);
-      
-      parts.push({
-        partNumber: i + 1,
-        size: parseFloat(partSizeKB),
-        duration: segment.duration,
-        startTime: segment.startTime,
-        endTime: segment.endTime,
-        qualityChange: segment.qualityChange,
-        outputPath: `/output/${path.basename(outputPath)}`
-      });
+      partProcessingPromises.push(promise);
     }
+
+    // 모든 분할 작업을 병렬로 실행
+    await Promise.all(partProcessingPromises);
+
+    // 파트 번호 순서대로 정렬
+    parts.sort((a, b) => a.partNumber - b.partNumber);
     
     return {
       success: true,

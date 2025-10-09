@@ -45,52 +45,23 @@ async function compressVideo(inputPath, targetSizeKB) {
     
     const outputPath = path.join(outputDir, `compressed_${Date.now()}_${path.basename(inputPath)}`);
     
-    // 하드웨어 가속 및 최적화된 설정
-    const hwAccelOptions = await detectHardwareAcceleration();
-    const cpuCores = require('os').cpus().length;
-    const threads = Math.max(1, Math.floor(cpuCores * 0.75)); // CPU 코어의 75% 사용
-    
     // 영상 압축
     await new Promise((resolve, reject) => {
-      let ffmpegCommand = ffmpeg(inputPath);
-      
-      // 하드웨어 가속 설정 (사용 가능한 경우)
-      if (hwAccelOptions.encoder) {
-        ffmpegCommand
-          .videoBitrate(targetBitrate)
-          .audioBitrate('128k')
-          .outputOptions([
-            `-c:v ${hwAccelOptions.encoder}`,
-            '-c:a aac',
-            '-maxrate ' + targetBitrate + 'k',
-            '-bufsize ' + (targetBitrate * 2) + 'k',
-            '-movflags +faststart',
-            ...hwAccelOptions.extraOptions
-          ]);
-      } else {
-        // 소프트웨어 인코딩 (최적화된 설정)
-        ffmpegCommand
-          .videoBitrate(targetBitrate)
-          .audioBitrate('128k')
-          .outputOptions([
-            '-c:v libx264',
-            '-c:a aac',
-            '-preset veryfast', // fast에서 veryfast로 변경 (속도 우선)
-            '-tune zerolatency', // 지연 시간 최소화
-            '-crf 23',
-            `-threads ${threads}`, // 멀티스레딩 최적화
-            '-maxrate ' + targetBitrate + 'k',
-            '-bufsize ' + (targetBitrate * 2) + 'k',
-            '-movflags +faststart',
-            '-x264-params keyint=60:min-keyint=60', // 키프레임 간격 최적화
-          ]);
-      }
-      
-      ffmpegCommand
+      ffmpeg(inputPath)
+        .videoBitrate(targetBitrate)
+        .audioBitrate('128k')
+        .outputOptions([
+          '-c:v libx264',
+          '-c:a aac',
+          '-preset ultrafast', // 'fast'에서 'ultrafast'로 변경하여 속도 향상
+          '-crf 23',
+          '-maxrate ' + targetBitrate + 'k',
+          '-bufsize ' + (targetBitrate * 2) + 'k',
+          '-movflags +faststart'
+        ])
         .output(outputPath)
         .on('start', (cmd) => {
           console.log('FFmpeg 명령어 실행:', cmd);
-          console.log(`사용 중: ${hwAccelOptions.encoder || 'libx264 (소프트웨어)'}, 스레드: ${threads}`);
         })
         .on('progress', (progress) => {
           console.log(`압축 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
@@ -176,42 +147,23 @@ async function splitVideo(inputPath, targetSizeKB) {
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
     
-    // 하드웨어 가속 및 최적화 설정
-    const hwAccelOptions = await detectHardwareAcceleration();
-    const cpuCores = require('os').cpus().length;
-    const threads = Math.max(1, Math.floor(cpuCores * 0.75));
-    
-    // 각 구간별로 분할
+    // 각 구간별로 분할 작업을 프로미스 배열로 생성
+    const splitPromises = [];
     for (let i = 0; i < totalParts; i++) {
       const startTime = i * segmentDuration;
       const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
       const outputPath = path.join(outputDir, `split_${timestamp}_${baseFileName}_part${i + 1}.mp4`);
       
-      await new Promise((resolve, reject) => {
-        let ffmpegCommand = ffmpeg(inputPath)
+      const promise = new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
           .setStartTime(startTime)
-          .setDuration(segmentDuration);
-        
-        // 하드웨어 가속 또는 최적화된 소프트웨어 인코딩
-        if (hwAccelOptions.encoder) {
-          ffmpegCommand.outputOptions([
-            `-c:v ${hwAccelOptions.encoder}`,
-            '-c:a aac',
-            '-movflags +faststart',
-            ...hwAccelOptions.extraOptions
-          ]);
-        } else {
-          ffmpegCommand.outputOptions([
+          .setDuration(segmentDuration)
+          .outputOptions([
             '-c:v libx264',
             '-c:a aac',
-            '-preset veryfast',
-            '-tune zerolatency',
-            `-threads ${threads}`,
+            '-preset ultrafast', // 'fast'에서 'ultrafast'로 변경하여 속도 향상
             '-movflags +faststart'
-          ]);
-        }
-        
-        ffmpegCommand
+          ])
           .output(outputPath)
           .on('start', (cmd) => {
             console.log(`FFmpeg 명령어 실행 (파트 ${i + 1}/${totalParts}):`, cmd);
@@ -219,8 +171,19 @@ async function splitVideo(inputPath, targetSizeKB) {
           .on('progress', (progress) => {
             console.log(`파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
           })
-          .on('end', () => {
+          .on('end', async () => {
             console.log(`파트 ${i + 1} 완료`);
+            // 분할된 파일 크기 확인
+            const partStats = await fs.stat(outputPath);
+            const partSizeKB = (partStats.size / 1024).toFixed(2);
+            
+            parts.push({
+              partNumber: i + 1,
+              size: parseFloat(partSizeKB),
+              duration: segmentDuration,
+              startTime: startTime,
+              outputPath: `/output/${path.basename(outputPath)}`
+            });
             resolve();
           })
           .on('error', (err) => {
@@ -229,19 +192,14 @@ async function splitVideo(inputPath, targetSizeKB) {
           })
           .run();
       });
-      
-      // 분할된 파일 크기 확인
-      const partStats = await fs.stat(outputPath);
-      const partSizeKB = (partStats.size / 1024).toFixed(2);
-      
-      parts.push({
-        partNumber: i + 1,
-        size: parseFloat(partSizeKB),
-        duration: segmentDuration,
-        startTime: startTime,
-        outputPath: `/output/${path.basename(outputPath)}`
-      });
+      splitPromises.push(promise);
     }
+
+    // 모든 분할 작업을 병렬로 실행
+    await Promise.all(splitPromises);
+
+    // 파트 번호 순서대로 정렬
+    parts.sort((a, b) => a.partNumber - b.partNumber);
     
     return {
       success: true,
@@ -256,80 +214,6 @@ async function splitVideo(inputPath, targetSizeKB) {
     console.error('영상 분할 오류:', error);
     throw new Error(`영상 분할 실패: ${error.message}`);
   }
-}
-
-/**
- * 하드웨어 가속 감지 및 설정
- * @returns {Promise<Object>} 하드웨어 가속 옵션
- */
-async function detectHardwareAcceleration() {
-  return new Promise((resolve) => {
-    // FFmpeg 버전 확인 및 하드웨어 인코더 감지
-    ffmpeg()
-      .getAvailableEncoders((err, encoders) => {
-        if (err) {
-          console.log('하드웨어 가속 감지 실패, 소프트웨어 인코딩 사용');
-          resolve({ encoder: null, extraOptions: [] });
-          return;
-        }
-        
-        // NVIDIA NVENC (가장 빠름)
-        if (encoders.h264_nvenc) {
-          console.log('NVIDIA NVENC 하드웨어 가속 감지됨');
-          resolve({
-            encoder: 'h264_nvenc',
-            extraOptions: [
-              '-preset p1', // 가장 빠른 프리셋
-              '-tune ll', // low latency
-              '-rc vbr', // variable bitrate
-            ]
-          });
-          return;
-        }
-        
-        // Intel Quick Sync Video
-        if (encoders.h264_qsv) {
-          console.log('Intel QSV 하드웨어 가속 감지됨');
-          resolve({
-            encoder: 'h264_qsv',
-            extraOptions: [
-              '-preset veryfast',
-              '-look_ahead 0',
-            ]
-          });
-          return;
-        }
-        
-        // AMD AMF
-        if (encoders.h264_amf) {
-          console.log('AMD AMF 하드웨어 가속 감지됨');
-          resolve({
-            encoder: 'h264_amf',
-            extraOptions: [
-              '-quality speed',
-              '-rc vbr_latency',
-            ]
-          });
-          return;
-        }
-        
-        // VAAPI (Linux)
-        if (encoders.h264_vaapi) {
-          console.log('VAAPI 하드웨어 가속 감지됨');
-          resolve({
-            encoder: 'h264_vaapi',
-            extraOptions: [
-              '-vaapi_device /dev/dri/renderD128',
-            ]
-          });
-          return;
-        }
-        
-        // 하드웨어 가속 없음
-        console.log('하드웨어 가속 미감지, 소프트웨어 인코딩 사용');
-        resolve({ encoder: null, extraOptions: [] });
-      });
-  });
 }
 
 /**
