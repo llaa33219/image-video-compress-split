@@ -13,7 +13,7 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #DDD;
             min-height: 100vh;
             padding: 20px;
         }
@@ -21,15 +21,12 @@
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            background: transparent;
             overflow: hidden;
         }
 
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            color: black;
             padding: 40px;
             text-align: center;
         }
@@ -37,7 +34,7 @@
         .header h1 {
             font-size: 2.5rem;
             margin-bottom: 10px;
-            font-weight: 300;
+            font-weight: 600;
         }
 
         .header p {
@@ -46,11 +43,13 @@
         }
 
         .api-status {
-            margin-top: 20px;
             padding: 15px;
-            background: rgba(255,255,255,0.1);
+            background: rgb(255, 255, 255);
             border-radius: 10px;
             font-size: 0.9rem;
+            width: 300px;
+            margin: 0 auto;
+            margin-top: 20px;
         }
 
         .status-indicator {
@@ -93,13 +92,15 @@
         }
 
         .tab.active {
-            color: #667eea;
-            border-bottom-color: #667eea;
+            color: #007BFF;
+            border-bottom-color: #007BFF;
             font-weight: 600;
         }
 
         .tab:hover {
             background: #f8f9ff;
+            border-top-left-radius: 15px;
+            border-top-right-radius: 15px;
         }
 
         .tab-content {
@@ -111,7 +112,8 @@
         }
 
         .upload-area {
-            border: 3px dashed #ddd;
+            background: #f9f9f9;
+            border: 5px dashed #000000;
             border-radius: 15px;
             padding: 60px 20px;
             text-align: center;
@@ -121,18 +123,18 @@
         }
 
         .upload-area:hover {
-            border-color: #667eea;
+            border-color: #005BDD;
             background: #f8f9ff;
         }
 
         .upload-area.dragover {
-            border-color: #667eea;
+            border-color: #005BDD;
             background: #f0f4ff;
         }
 
         .upload-icon {
             font-size: 3rem;
-            color: #667eea;
+            color: #005BDD;
             margin-bottom: 20px;
         }
 
@@ -195,7 +197,8 @@
         .form-group input:focus,
         .form-group select:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #007BFF;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         }
 
         .radio-group {
@@ -215,24 +218,29 @@
         }
 
         .process-btn {
-            width: 100%;
-            padding: 15px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-color: #007BFF;
             color: white;
             border: none;
-            border-radius: 10px;
-            font-size: 1.1rem;
-            font-weight: 600;
+            border-radius: 20px;
+            padding: 10px 20px;
+            margin: 20px 0;
+            width: 100%;
+            height: 51px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
             cursor: pointer;
-            transition: transform 0.3s ease;
+            transition: background-color 0.3s ease, transform 0.1s ease, box-shadow 0.3s ease;
+            font-weight: bold;
+            font-size: 24px;
         }
 
         .process-btn:hover {
-            transform: translateY(-2px);
+            background-color: #005BDD;
+            transform: translateY(2px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         }
 
         .process-btn:disabled {
-            opacity: 0.6;
+            background-color: rgb(110, 110, 110);
             cursor: not-allowed;
             transform: none;
         }
