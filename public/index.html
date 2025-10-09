@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>미디어 압축 및 분할 서비스</title>
+    <title>IVCP Service</title>
     <style>
         * {
             margin: 0;
@@ -348,7 +348,7 @@
             text-decoration: none;
             border-radius: 14px;
             font-weight: 500;
-            transition: all 0.3s ease;
+            transition: background-color 0.3s ease, transform 0.1s ease, box-shadow 0.3s ease;
             margin-right: 10px;
             margin-bottom: 10px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
@@ -426,8 +426,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>미디어 압축 및 분할 서비스</h1>
-            <p>이미지와 영상을 효율적으로 압축하고 분할하세요</p>
+            <h1>IVCP Service</h1>
+            <p>이미지와 영상을 효율적으로 압축하고 분할합니다.</p>
             <div class="api-status" id="api-status">
                 <span class="status-indicator status-offline"></span>
                 <span id="status-text">API 상태 확인 중...</span>
@@ -437,7 +437,7 @@
         <div class="main-content">
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('image')">이미지 압축</button>
-                <button class="tab" onclick="switchTab('video')">영상 압축</button>
+                <button class="tab" onclick="switchTab('video')">영상 압축/분할</button>
                 <button class="tab" onclick="switchTab('webm')">WebM 분할</button>
             </div>
 
