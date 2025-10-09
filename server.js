@@ -12,33 +12,6 @@ const { detectWebMQualityChange } = require('./services/webmProcessor');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Railway 환경에서 프록시 신뢰 설정
-if (process.env.RAILWAY_ENVIRONMENT) {
-  app.set('trust proxy', 1);
-}
-
-// Railway 환경 최적화 설정
-if (process.env.RAILWAY_ENVIRONMENT) {
-  // 메모리 사용량 모니터링
-  setInterval(() => {
-    const used = process.memoryUsage();
-    console.log('메모리 사용량:', {
-      rss: Math.round(used.rss / 1024 / 1024) + 'MB',
-      heapTotal: Math.round(used.heapTotal / 1024 / 1024) + 'MB',
-      heapUsed: Math.round(used.heapUsed / 1024 / 1024) + 'MB',
-      external: Math.round(used.external / 1024 / 1024) + 'MB'
-    });
-  }, 30000); // 30초마다 로깅
-  
-  // 가비지 컬렉션 강제 실행 (메모리 최적화)
-  if (global.gc) {
-    setInterval(() => {
-      global.gc();
-      console.log('가비지 컬렉션 실행');
-    }, 60000); // 1분마다 실행
-  }
-}
-
 // 미들웨어 설정
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -74,8 +47,8 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-app.use(express.json({ limit: process.env.RAILWAY_ENVIRONMENT ? '20mb' : '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: process.env.RAILWAY_ENVIRONMENT ? '20mb' : '50mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // 업로드 디렉토리 생성
 const uploadDir = path.join(__dirname, 'uploads');
@@ -97,7 +70,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: process.env.RAILWAY_ENVIRONMENT ? 200 * 1024 * 1024 : 500 * 1024 * 1024 // Railway: 200MB, 로컬: 500MB
+    fileSize: 500 * 1024 * 1024 // 500MB 제한
   },
   fileFilter: (req, file, cb) => {
     const allowedMimes = [
@@ -152,7 +125,7 @@ app.get('/', (req, res) => {
       }
     },
     limits: {
-      max_file_size: process.env.RAILWAY_ENVIRONMENT ? '200MB' : '500MB',
+      max_file_size: '500MB',
       rate_limit: '500 requests per 15 minutes'
     }
   });
@@ -249,8 +222,7 @@ app.post('/api/split-webm', upload.single('video'), async (req, res) => {
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      const maxSize = process.env.RAILWAY_ENVIRONMENT ? '200MB' : '500MB';
-      return res.status(400).json({ error: `파일 크기가 너무 큽니다. (최대 ${maxSize})` });
+      return res.status(400).json({ error: '파일 크기가 너무 큽니다. (최대 500MB)' });
     }
   }
   console.error('서버 오류:', error);
