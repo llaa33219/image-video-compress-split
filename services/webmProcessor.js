@@ -13,6 +13,8 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
  * @returns {Promise<Object>} 처리 결과
  */
 async function detectWebMQualityChange(inputPath, targetSizeKB) {
+  const startTime = Date.now(); // 처리 시간 측정 시작
+  
   try {
     const outputDir = path.join(__dirname, '..', 'output');
     await fs.ensureDir(outputDir);
@@ -41,7 +43,8 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           duration: webmInfo.duration,
           outputPath: `/output/${path.basename(outputPath)}`
         }],
-        action: 'copied'
+        action: 'copied',
+        processingTime: `${(Date.now() - startTime) / 1000} 초`
       };
     }
     
@@ -124,7 +127,8 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       totalParts: parts.length,
       qualityChanges: qualityChanges,
       parts: parts,
-      action: 'split_with_quality_detection'
+      action: 'split_with_quality_detection',
+      processingTime: `${(Date.now() - startTime) / 1000} 초`
     };
     
   } catch (error) {
