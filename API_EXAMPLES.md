@@ -18,13 +18,17 @@ POST /api/compress-image
 ### 요청 파라미터
 - `image` (file, required): 압축할 이미지 파일
 - `targetSizeKB` (number, required): 목표 용량 (KB)
+- `returnBase64` (boolean, optional): `true`로 설정 시, 응답에 Base64로 인코딩된 이미지 데이터를 포함합니다.
 
 ### JavaScript/Fetch 예제
 ```javascript
-async function compressImage(imageFile, targetSizeKB) {
+async function compressImage(imageFile, targetSizeKB, getBase64 = false) {
   const formData = new FormData();
   formData.append('image', imageFile);
   formData.append('targetSizeKB', targetSizeKB);
+  if (getBase64) {
+    formData.append('returnBase64', 'true');
+  }
 
   const response = await fetch('https://ivcp.bloupla.net/api/compress-image', {
     method: 'POST',
@@ -35,9 +39,15 @@ async function compressImage(imageFile, targetSizeKB) {
   
   if (result.success) {
     console.log('압축 성공:', result);
-    // 압축된 이미지 다운로드
-    const downloadUrl = `https://ivcp.bloupla.net${result.outputPath}`;
-    window.open(downloadUrl);
+
+    if (result.base64) {
+      console.log('Base64 데이터:', result.base64.substring(0, 30) + '...');
+      // 예: <img src="data:image/jpeg;base64,..." />
+    } else {
+      // 압축된 이미지 다운로드
+      const downloadUrl = `https://ivcp.bloupla.net${result.outputPath}`;
+      window.open(downloadUrl);
+    }
   } else {
     console.error('압축 실패:', result.error);
   }
@@ -48,7 +58,8 @@ async function compressImage(imageFile, targetSizeKB) {
 // 사용 예제
 const fileInput = document.querySelector('input[type="file"]');
 const file = fileInput.files[0];
-compressImage(file, 500); // 500KB로 압축
+compressImage(file, 500); // 500KB로 압축 (파일 다운로드)
+compressImage(file, 500, true); // 500KB로 압축 (Base64 데이터 받기)
 ```
 
 ### jQuery 예제
@@ -132,6 +143,23 @@ compress_image('image.jpg', 500)
 }
 ```
 
+### `returnBase64=true` 응답 예제
+```json
+{
+  "success": true,
+  "message": "이미지가 성공적으로 압축되었습니다.",
+  "originalSize": 2048.56,
+  "compressedSize": 498.23,
+  "compressionRatio": 75.7,
+  "quality": 65,
+  "dimensions": "1920x1080",
+  "format": "jpeg",
+  "outputPath": "/output/compressed_1728378900123_image.jpg",
+  "action": "compressed",
+  "base64": "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
+}
+```
+
 **참고**: 모든 크기는 KB 단위입니다.
 
 ## 2. 영상 압축 API
@@ -145,14 +173,18 @@ POST /api/compress-video
 - `video` (file, required): 압축할 영상 파일
 - `targetSizeKB` (number, required): 목표 용량 (KB)
 - `compressionMode` (string, required): "compress" (압축) 또는 "split" (분할)
+- `returnBase64` (boolean, optional): `true`로 설정 시, 응답에 Base64로 인코딩된 영상 데이터를 포함합니다.
 
 ### JavaScript 예제
 ```javascript
-async function compressVideo(videoFile, targetSizeKB, mode = 'compress') {
+async function compressVideo(videoFile, targetSizeKB, mode = 'compress', getBase64 = false) {
   const formData = new FormData();
   formData.append('video', videoFile);
   formData.append('targetSizeKB', targetSizeKB);
   formData.append('compressionMode', mode);
+  if (getBase64) {
+    formData.append('returnBase64', 'true');
+  }
 
   const response = await fetch('https://ivcp.bloupla.net/api/compress-video', {
     method: 'POST',
@@ -165,12 +197,19 @@ async function compressVideo(videoFile, targetSizeKB, mode = 'compress') {
     console.log('처리 성공:', result);
     
     if (result.outputPath) {
-      // 단일 파일 다운로드
-      window.open(`https://ivcp.bloupla.net${result.outputPath}`);
+      if (result.base64) {
+        console.log('Base64 데이터 (영상):', result.base64.substring(0, 30) + '...');
+      } else {
+        window.open(`https://ivcp.bloupla.net${result.outputPath}`);
+      }
     } else if (result.parts) {
       // 여러 파일 다운로드
       result.parts.forEach(part => {
-        window.open(`https://ivcp.bloupla.net${part.outputPath}`);
+        if (part.base64) {
+          console.log(`파트 ${part.partNumber} Base64:`, part.base64.substring(0, 30) + '...');
+        } else {
+          window.open(`https://ivcp.bloupla.net${part.outputPath}`);
+        }
       });
     }
   }
@@ -181,7 +220,7 @@ async function compressVideo(videoFile, targetSizeKB, mode = 'compress') {
 // 사용 예제
 const videoFile = document.querySelector('input[type="file"]').files[0];
 compressVideo(videoFile, 102400, 'compress'); // 100MB (102400KB)로 압축
-compressVideo(videoFile, 51200, 'split'); // 50MB (51200KB)씩 분할
+compressVideo(videoFile, 51200, 'split', true); // 50MB (51200KB)씩 분할하고 Base64 받기
 ```
 
 ### Python 예제
@@ -227,19 +266,16 @@ compress_video('video.mp4', 102400, 'compress')  # 100MB = 102400KB
 compress_video('video.mp4', 51200, 'split')  # 50MB = 51200KB
 ```
 
-### 압축 모드 응답 예제
+### 압축 모드 (`returnBase64=true`) 응답 예제
 ```json
 {
   "success": true,
   "message": "영상이 성공적으로 압축되었습니다.",
   "originalSize": 256000,
   "compressedSize": 100352,
-  "compressionRatio": 60.8,
-  "duration": 120.5,
-  "resolution": "1920x1080",
-  "bitrate": 682,
   "outputPath": "/output/compressed_1728378900123_video.mp4",
-  "action": "compressed"
+  "action": "compressed",
+  "base64": "AAAAIGZ0eX... (video data)"
 }
 ```
 
@@ -277,6 +313,37 @@ compress_video('video.mp4', 51200, 'split')  # 50MB = 51200KB
 }
 ```
 
+### 분할 모드 (`returnBase64=true`) 응답 예제
+```json
+{
+  "success": true,
+  "message": "영상이 3개 구간으로 분할되었습니다.",
+  "totalParts": 3,
+  "parts": [
+    {
+      "partNumber": 1,
+      "size": 49152,
+      "outputPath": "/output/split_1728378900123_video_part1.mp4",
+      "base64": "AAAAIGZ0eX... (part 1 video data)"
+    },
+    {
+      "partNumber": 2,
+      "size": 49152,
+      "outputPath": "/output/split_1728378900124_video_part2.mp4",
+      "base64": "AAAAIGZ0eX... (part 2 video data)"
+    },
+    {
+      "partNumber": 3,
+      "size": 49152,
+      "outputPath": "/output/split_1728378900125_video_part3.mp4",
+      "base64": "AAAAIGZ0eX... (part 3 video data)"
+    }
+  ],
+  "action": "split"
+}
+```
+
+
 **참고**: 모든 크기는 KB 단위입니다.
 
 ## 3. WebM 분할 API (화질 변경 감지)
@@ -289,13 +356,17 @@ POST /api/split-webm
 ### 요청 파라미터
 - `video` (file, required): WebM 파일
 - `targetSizeKB` (number, required): 각 분할 파일 최대 용량 (KB)
+- `returnBase64` (boolean, optional): `true`로 설정 시, 응답에 Base64로 인코딩된 파일 데이터를 포함합니다.
 
 ### JavaScript 예제
 ```javascript
-async function splitWebM(webmFile, targetSizeKB) {
+async function splitWebM(webmFile, targetSizeKB, getBase64 = false) {
   const formData = new FormData();
   formData.append('video', webmFile);
   formData.append('targetSizeKB', targetSizeKB);
+  if (getBase64) {
+    formData.append('returnBase64', 'true');
+  }
 
   const response = await fetch('https://ivcp.bloupla.net/api/split-webm', {
     method: 'POST',
@@ -308,13 +379,14 @@ async function splitWebM(webmFile, targetSizeKB) {
     console.log('분할 성공:', result);
     console.log(`화질 변경 ${result.qualityChanges.length}개 감지`);
     
-    // 모든 파트 다운로드
+    // 모든 파트 다운로드 또는 Base64 데이터 확인
     result.parts.forEach(part => {
       console.log(`파트 ${part.partNumber}: ${part.size}KB`);
-      if (part.qualityChange) {
-        console.log('  → 화질 변경:', part.qualityChange);
+      if (part.base64) {
+        console.log('  → Base64 데이터:', part.base64.substring(0, 30) + '...');
+      } else {
+        window.open(`https://ivcp.bloupla.net${part.outputPath}`);
       }
-      window.open(`https://ivcp.bloupla.net${part.outputPath}`);
     });
   }
   
@@ -324,6 +396,7 @@ async function splitWebM(webmFile, targetSizeKB) {
 // 사용 예제
 const webmFile = document.querySelector('input[type="file"]').files[0];
 splitWebM(webmFile, 51200); // 50MB = 51200KB
+splitWebM(webmFile, 51200, true); // Base64 데이터 포함
 ```
 
 ### 응답 예제
@@ -375,6 +448,31 @@ splitWebM(webmFile, 51200); // 50MB = 51200KB
   "action": "split_with_quality_detection"
 }
 ```
+
+### `returnBase64=true` 응답 예제
+```json
+{
+  "success": true,
+  "message": "WebM 파일이 2개 구간으로 분할되었습니다.",
+  "totalParts": 2,
+  "parts": [
+    {
+      "partNumber": 1,
+      "size": 46080,
+      "outputPath": "/output/webm_1728378900123_video_part1.webm",
+      "base64": "GkXfo6NChoEBQ... (part 1 webm data)"
+    },
+    {
+      "partNumber": 2,
+      "size": 43008,
+      "outputPath": "/output/webm_1728378900124_video_part2.webm",
+      "base64": "GkXfo6NChoEBQ... (part 2 webm data)"
+    }
+  ],
+  "action": "split_with_quality_detection"
+}
+```
+
 
 **참고**: 모든 크기는 KB 단위입니다.
 

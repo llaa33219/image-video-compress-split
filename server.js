@@ -9,6 +9,47 @@ const { compressImage } = require('./services/imageCompression');
 const { compressVideo, splitVideo } = require('./services/videoCompression');
 const { detectWebMQualityChange } = require('./services/webmProcessor');
 
+/**
+ * 결과 객체에 Base64 인코딩된 파일 데이터를 추가합니다.
+ * @param {Object} result - 서비스 함수에서 반환된 결과 객체
+ * @param {boolean} returnBase64 - Base64 반환 여부
+ * @returns {Promise<Object>} Base64 데이터가 추가된 결과 객체
+ */
+async function addBase64ToResult(result, returnBase64) {
+  if (!returnBase64 || !result.success) {
+    return result;
+  }
+
+  try {
+    if (result.outputPath) {
+      // output 디렉토리 경로 수정
+      const filePath = path.join(__dirname, 'output', path.basename(result.outputPath));
+      if (await fs.pathExists(filePath)) {
+        const fileData = await fs.readFile(filePath);
+        result.base64 = fileData.toString('base64');
+      }
+    }
+
+    if (result.parts && Array.isArray(result.parts)) {
+      for (const part of result.parts) {
+        if (part.outputPath) {
+          const filePath = path.join(__dirname, 'output', path.basename(part.outputPath));
+          if (await fs.pathExists(filePath)) {
+            const fileData = await fs.readFile(filePath);
+            part.base64 = fileData.toString('base64');
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Base64 변환 오류:', error);
+    // Base64 변환에 실패하더라도 원본 결과는 반환하도록 처리
+  }
+
+  return result;
+}
+
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -101,7 +142,8 @@ app.get('/', (req, res) => {
         description: '이미지를 목표 용량으로 압축',
         parameters: {
           image: 'file (required) - 이미지 파일',
-          targetSizeKB: 'number (required) - 목표 용량 (KB)'
+          targetSizeKB: 'number (required) - 목표 용량 (KB)',
+          returnBase64: 'boolean (optional) - 결과를 Base64로 인코딩하여 포함할지 여부'
         }
       },
       video_compression: {
@@ -111,7 +153,8 @@ app.get('/', (req, res) => {
         parameters: {
           video: 'file (required) - 영상 파일',
           targetSizeKB: 'number (required) - 목표 용량 (KB)',
-          compressionMode: 'string (required) - "compress" 또는 "split"'
+          compressionMode: 'string (required) - "compress" 또는 "split"',
+          returnBase64: 'boolean (optional) - 결과를 Base64로 인코딩하여 포함할지 여부'
         }
       },
       webm_split: {
@@ -120,7 +163,8 @@ app.get('/', (req, res) => {
         description: 'WebM 화질 변경 감지 및 분할',
         parameters: {
           video: 'file (required) - WebM 파일',
-          targetSizeKB: 'number (required) - 각 분할 파일 최대 용량 (KB)'
+          targetSizeKB: 'number (required) - 각 분할 파일 최대 용량 (KB)',
+          returnBase64: 'boolean (optional) - 결과를 Base64로 인코딩하여 포함할지 여부'
         }
       }
     },
@@ -143,17 +187,20 @@ app.post('/api/compress-image', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: '이미지 파일이 필요합니다.' });
     }
 
-    const { targetSizeKB } = req.body;
+    const { targetSizeKB, returnBase64 } = req.body;
     if (!targetSizeKB || isNaN(targetSizeKB)) {
       return res.status(400).json({ error: '유효한 목표 용량(KB)을 입력해주세요.' });
     }
 
     const result = await compressImage(req.file.path, parseInt(targetSizeKB));
-    
+
+    // Base64 데이터 추가
+    const finalResult = await addBase64ToResult(result, returnBase64 === 'true' || returnBase64 === true);
+
     // 업로드된 파일 삭제
     await fs.remove(req.file.path);
     
-    res.json(result);
+    res.json(finalResult);
   } catch (error) {
     console.error('이미지 압축 오류:', error);
     res.status(500).json({ error: '이미지 압축 중 오류가 발생했습니다.' });
@@ -167,7 +214,7 @@ app.post('/api/compress-video', upload.single('video'), async (req, res) => {
       return res.status(400).json({ error: '영상 파일이 필요합니다.' });
     }
 
-    const { targetSizeKB, compressionMode } = req.body;
+    const { targetSizeKB, compressionMode, returnBase64 } = req.body;
     if (!targetSizeKB || isNaN(targetSizeKB)) {
       return res.status(400).json({ error: '유효한 목표 용량(KB)을 입력해주세요.' });
     }
@@ -182,11 +229,14 @@ app.post('/api/compress-video', upload.single('video'), async (req, res) => {
     } else {
       result = await splitVideo(req.file.path, parseInt(targetSizeKB));
     }
+
+    // Base64 데이터 추가
+    const finalResult = await addBase64ToResult(result, returnBase64 === 'true' || returnBase64 === true);
     
     // 업로드된 파일 삭제
     await fs.remove(req.file.path);
     
-    res.json(result);
+    res.json(finalResult);
   } catch (error) {
     console.error('영상 처리 오류:', error);
     res.status(500).json({ error: '영상 처리 중 오류가 발생했습니다.' });
@@ -200,7 +250,7 @@ app.post('/api/split-webm', upload.single('video'), async (req, res) => {
       return res.status(400).json({ error: 'WebM 파일이 필요합니다.' });
     }
 
-    const { targetSizeKB } = req.body;
+    const { targetSizeKB, returnBase64 } = req.body;
     if (!targetSizeKB || isNaN(targetSizeKB)) {
       return res.status(400).json({ error: '유효한 목표 용량(KB)을 입력해주세요.' });
     }
@@ -208,10 +258,13 @@ app.post('/api/split-webm', upload.single('video'), async (req, res) => {
     // WebM 화질 변경 감지 및 분할
     const result = await detectWebMQualityChange(req.file.path, parseInt(targetSizeKB));
     
+    // Base64 데이터 추가
+    const finalResult = await addBase64ToResult(result, returnBase64 === 'true' || returnBase64 === true);
+
     // 업로드된 파일 삭제
     await fs.remove(req.file.path);
     
-    res.json(result);
+    res.json(finalResult);
   } catch (error) {
     console.error('WebM 처리 오류:', error);
     res.status(500).json({ error: 'WebM 처리 중 오류가 발생했습니다.' });
