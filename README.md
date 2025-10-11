@@ -32,12 +32,12 @@
 
 ### API 상태 확인
 ```bash
-curl https://your-railway-app.railway.app/
+curl https://ivcp.bloupla.net/
 ```
 
 ### 이미지 압축 예제
 ```bash
-curl -X POST https://your-railway-app.railway.app/api/compress-image \
+curl -X POST https://ivcp.bloupla.net/api/compress-image \
   -F "image=@image.jpg" \
   -F "targetSizeKB=500"
 ```
@@ -48,7 +48,7 @@ const formData = new FormData();
 formData.append('image', imageFile);
 formData.append('targetSizeKB', 500);
 
-const response = await fetch('https://your-railway-app.railway.app/api/compress-image', {
+const response = await fetch('https://ivcp.bloupla.net/api/compress-image', {
   method: 'POST',
   body: formData
 });
@@ -156,7 +156,7 @@ npm start
 
 API 외에도 웹 브라우저에서 직접 사용할 수 있는 UI가 제공됩니다:
 ```
-https://your-railway-app.railway.app/web
+https://ivcp.bloupla.net/web
 ```
 
 ## 환경 변수

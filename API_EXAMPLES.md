@@ -4,7 +4,7 @@
 
 ## 기본 정보
 
-- **Base URL**: `https://your-railway-app.railway.app`
+- **Base URL**: `https://ivcp.bloupla.net/`
 - **Rate Limit**: 15분당 500 요청
 - **최대 파일 크기**: 500MB
 
@@ -26,7 +26,7 @@ async function compressImage(imageFile, targetSizeKB) {
   formData.append('image', imageFile);
   formData.append('targetSizeKB', targetSizeKB);
 
-  const response = await fetch('https://your-railway-app.railway.app/api/compress-image', {
+  const response = await fetch('https://ivcp.bloupla.net/api/compress-image', {
     method: 'POST',
     body: formData
   });
@@ -36,7 +36,7 @@ async function compressImage(imageFile, targetSizeKB) {
   if (result.success) {
     console.log('압축 성공:', result);
     // 압축된 이미지 다운로드
-    const downloadUrl = `https://your-railway-app.railway.app${result.outputPath}`;
+    const downloadUrl = `https://ivcp.bloupla.net${result.outputPath}`;
     window.open(downloadUrl);
   } else {
     console.error('압축 실패:', result.error);
@@ -59,7 +59,7 @@ function compressImage(imageFile, targetSizeKB) {
   formData.append('targetSizeKB', targetSizeKB);
 
   $.ajax({
-    url: 'https://your-railway-app.railway.app/api/compress-image',
+    url: 'https://ivcp.bloupla.net/api/compress-image',
     type: 'POST',
     data: formData,
     processData: false,
@@ -67,7 +67,7 @@ function compressImage(imageFile, targetSizeKB) {
     success: function(result) {
       if (result.success) {
         console.log('압축 성공:', result);
-        const downloadUrl = `https://your-railway-app.railway.app${result.outputPath}`;
+        const downloadUrl = `https://ivcp.bloupla.net${result.outputPath}`;
         window.open(downloadUrl);
       }
     },
@@ -80,7 +80,7 @@ function compressImage(imageFile, targetSizeKB) {
 
 ### cURL 예제
 ```bash
-curl -X POST https://your-railway-app.railway.app/api/compress-image \
+curl -X POST https://ivcp.bloupla.net/api/compress-image \
   -F "image=@/path/to/image.jpg" \
   -F "targetSizeKB=500"
 ```
@@ -90,7 +90,7 @@ curl -X POST https://your-railway-app.railway.app/api/compress-image \
 import requests
 
 def compress_image(image_path, target_size_kb):
-    url = 'https://your-railway-app.railway.app/api/compress-image'
+    url = 'https://ivcp.bloupla.net/api/compress-image'
     
     with open(image_path, 'rb') as f:
         files = {'image': f}
@@ -102,7 +102,7 @@ def compress_image(image_path, target_size_kb):
         if result.get('success'):
             print('압축 성공:', result)
             # 압축된 이미지 다운로드
-            download_url = f"https://your-railway-app.railway.app{result['outputPath']}"
+            download_url = f"https://ivcp.bloupla.net{result['outputPath']}"
             download_response = requests.get(download_url)
             
             with open('compressed_image.jpg', 'wb') as output_file:
@@ -154,7 +154,7 @@ async function compressVideo(videoFile, targetSizeKB, mode = 'compress') {
   formData.append('targetSizeKB', targetSizeKB);
   formData.append('compressionMode', mode);
 
-  const response = await fetch('https://your-railway-app.railway.app/api/compress-video', {
+  const response = await fetch('https://ivcp.bloupla.net/api/compress-video', {
     method: 'POST',
     body: formData
   });
@@ -166,11 +166,11 @@ async function compressVideo(videoFile, targetSizeKB, mode = 'compress') {
     
     if (result.outputPath) {
       // 단일 파일 다운로드
-      window.open(`https://your-railway-app.railway.app${result.outputPath}`);
+      window.open(`https://ivcp.bloupla.net${result.outputPath}`);
     } else if (result.parts) {
       // 여러 파일 다운로드
       result.parts.forEach(part => {
-        window.open(`https://your-railway-app.railway.app${part.outputPath}`);
+        window.open(`https://ivcp.bloupla.net${part.outputPath}`);
       });
     }
   }
@@ -189,7 +189,7 @@ compressVideo(videoFile, 51200, 'split'); // 50MB (51200KB)씩 분할
 import requests
 
 def compress_video(video_path, target_size_kb, mode='compress'):
-    url = 'https://your-railway-app.railway.app/api/compress-video'
+    url = 'https://ivcp.bloupla.net/api/compress-video'
     
     with open(video_path, 'rb') as f:
         files = {'video': f}
@@ -206,12 +206,12 @@ def compress_video(video_path, target_size_kb, mode='compress'):
             
             if result.get('outputPath'):
                 # 단일 파일 다운로드
-                download_url = f"https://your-railway-app.railway.app{result['outputPath']}"
+                download_url = f"https://ivcp.bloupla.net{result['outputPath']}"
                 download_file(download_url, 'compressed_video.mp4')
             elif result.get('parts'):
                 # 여러 파일 다운로드
                 for part in result['parts']:
-                    download_url = f"https://your-railway-app.railway.app{part['outputPath']}"
+                    download_url = f"https://ivcp.bloupla.net{part['outputPath']}"
                     download_file(download_url, f"video_part{part['partNumber']}.mp4")
         
         return result
@@ -297,7 +297,7 @@ async function splitWebM(webmFile, targetSizeKB) {
   formData.append('video', webmFile);
   formData.append('targetSizeKB', targetSizeKB);
 
-  const response = await fetch('https://your-railway-app.railway.app/api/split-webm', {
+  const response = await fetch('https://ivcp.bloupla.net/api/split-webm', {
     method: 'POST',
     body: formData
   });
@@ -314,7 +314,7 @@ async function splitWebM(webmFile, targetSizeKB) {
       if (part.qualityChange) {
         console.log('  → 화질 변경:', part.qualityChange);
       }
-      window.open(`https://your-railway-app.railway.app${part.outputPath}`);
+      window.open(`https://ivcp.bloupla.net${part.outputPath}`);
     });
   }
   
@@ -413,7 +413,7 @@ splitWebM(webmFile, 51200); // 50MB = 51200KB
 
 API 상태 확인:
 ```bash
-curl https://your-railway-app.railway.app/
+curl https://ivcp.bloupla.net/
 ```
 
 응답:
