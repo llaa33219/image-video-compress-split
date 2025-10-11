@@ -6,6 +6,9 @@
 
 ## 기능
 
+### 공통 기능
+- **Base64 출력**: 모든 API에서 `returnBase64=true` 파라미터를 사용하여, 처리된 파일을 다운로드 링크 대신 `data:` URI 스킴을 포함한 Base64 문자열로 직접 반환받을 수 있습니다. 이는 `<img>`나 `<a>` 태그에 바로 사용 가능합니다.
+
 ### 이미지 압축
 - JPG, PNG, WebP, GIF 형식 지원
 - 목표 용량(KB) 설정 가능
@@ -37,9 +40,16 @@ curl https://ivcp.bloupla.net/
 
 ### 이미지 압축 예제
 ```bash
+# 파일로 다운로드
 curl -X POST https://ivcp.bloupla.net/api/compress-image \
   -F "image=@image.jpg" \
   -F "targetSizeKB=500"
+
+# Base64로 결과 받기
+curl -X POST https://ivcp.bloupla.net/api/compress-image \
+  -F "image=@image.jpg" \
+  -F "targetSizeKB=500" \
+  -F "returnBase64=true"
 ```
 
 ### JavaScript에서 호출
@@ -47,6 +57,7 @@ curl -X POST https://ivcp.bloupla.net/api/compress-image \
 const formData = new FormData();
 formData.append('image', imageFile);
 formData.append('targetSizeKB', 500);
+formData.append('returnBase64', 'true'); // Base64로 받기
 
 const response = await fetch('https://ivcp.bloupla.net/api/compress-image', {
   method: 'POST',
@@ -69,6 +80,7 @@ Content-Type: multipart/form-data
 파라미터:
 - image: 이미지 파일
 - targetSizeKB: 목표 용량 (KB)
+- returnBase64: (선택) `true`로 설정 시 Base64 data URI로 반환
 ```
 
 ### 2. 영상 압축
@@ -80,6 +92,7 @@ Content-Type: multipart/form-data
 - video: 영상 파일
 - targetSizeKB: 목표 용량 (KB)
 - compressionMode: "compress" 또는 "split"
+- returnBase64: (선택) `true`로 설정 시 Base64 data URI로 반환
 ```
 
 ### 3. WebM 분할
@@ -90,6 +103,7 @@ Content-Type: multipart/form-data
 파라미터:
 - video: WebM 파일
 - targetSizeKB: 각 분할 파일 최대 용량 (KB)
+- returnBase64: (선택) `true`로 설정 시 Base64 data URI로 반환
 ```
 
 ## 설치 및 실행

@@ -987,6 +987,16 @@
                     const isImage = result.base64.startsWith('data:image');
                     const isVideo = result.base64.startsWith('data:video');
 
+                    let previewHtml = '';
+                    if (isImage) {
+                        previewHtml = `<div class="base64-preview"><img src="${result.base64}" alt="처리 결과 이미지"></div>`;
+                    } else if (isVideo) {
+                        // Blob URL을 생성하여 비디오를 안정적으로 미리보기
+                        const videoBlob = dataUriToBlob(result.base64);
+                        const videoUrl = URL.createObjectURL(videoBlob);
+                        previewHtml = `<div class="base64-preview"><video src="${videoUrl}" controls></video></div>`;
+                    }
+
                     downloadEl.innerHTML = `
                         <div class="base64-output">
                             <div class="info-label">Base64 데이터 URI</div>
@@ -994,8 +1004,7 @@
                             <div class="base64-actions">
                                 <button onclick="copyToClipboard('${result.base64}')">전체 복사</button>
                             </div>
-                            ${isImage ? `<div class="base64-preview"><img src="${result.base64}" alt="처리 결과 이미지"></div>` : ''}
-                            ${isVideo ? `<div class="base64-preview"><video src="${result.base64}" controls></video></div>` : ''}
+                            ${previewHtml}
                         </div>
                     `;
                 } else if (result.outputPath) {
@@ -1057,6 +1066,18 @@
         // 결과 숨기기
         function hideResult() {
             document.getElementById('result-container').style.display = 'none';
+        }
+
+        // Data URI를 Blob으로 변환하는 함수
+        function dataUriToBlob(dataURI) {
+            const byteString = atob(dataURI.split(',')[1]);
+            const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+            return new Blob([ab], { type: mimeString });
         }
 
         // 클립보드에 복사
