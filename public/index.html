@@ -217,6 +217,98 @@
             width: auto;
         }
 
+        .switch-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 28px;
+        }
+
+        .switch input { 
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 28px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #007BFF;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+
+        .base64-output {
+            margin-top: 15px;
+            background: #fff;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #e0e6ff;
+        }
+
+        .base64-output textarea {
+            width: 100%;
+            height: 100px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            resize: vertical;
+        }
+
+        .base64-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .base64-actions button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #6c757d;
+            color: white;
+            font-weight: 500;
+            transition: background-color 0.3s;
+        }
+
+        .base64-actions button:hover {
+            background: #5a6268;
+        }
+
+
         .process-btn {
             background-color: #007BFF;
             color: white;
@@ -439,6 +531,22 @@
                 <button class="tab active" onclick="switchTab('image')">이미지 압축</button>
                 <button class="tab" onclick="switchTab('video')">영상 압축/분할</button>
                 <button class="tab" onclick="switchTab('webm')">WebM 분할</button>
+            </div>
+
+            <!-- 공통 설정 -->
+            <div class="controls">
+                <div class="control-group">
+                    <h3>공통 설정</h3>
+                    <div class="form-group">
+                        <div class="switch-group">
+                            <label for="return-base64">Base64 출력</label>
+                            <label class="switch">
+                                <input type="checkbox" id="return-base64">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- 이미지 압축 탭 -->
@@ -753,6 +861,11 @@
                 formData.append(key, data[key]);
             });
 
+            // Base64 출력 옵션 추가
+            if (document.getElementById('return-base64').checked) {
+                formData.append('returnBase64', 'true');
+            }
+
             try {
                 const response = await fetch(endpoint, {
                     method: 'POST',
@@ -860,26 +973,34 @@
                 `;
                 
                 // 다운로드 링크
-                if (result.outputPath) {
+                if (result.base64) {
+                    downloadEl.innerHTML = `
+                        <div class="base64-output">
+                            <div class="info-label">Base64 데이터 (일부)</div>
+                            <textarea readonly>${result.base64.substring(0, 100)}...</textarea>
+                            <div class="base64-actions">
+                                <button onclick="copyToClipboard('${result.base64}')">전체 복사</button>
+                            </div>
+                        </div>
+                    `;
+                } else if (result.outputPath) {
                     downloadEl.innerHTML = `
                         <a href="${result.outputPath}" class="download-btn" download>다운로드</a>
                     `;
-                } else if (result.parts) {
-                    downloadEl.innerHTML = result.parts.map((part, index) => 
-                        `<a href="${part.outputPath}" class="download-btn" download>파트 ${part.partNumber} 다운로드</a>`
-                    ).join('');
+                } else {
+                    downloadEl.innerHTML = '';
                 }
                 
-                // 분할된 파일 목록 (1개 파일도 표시)
-                if (result.parts && result.parts.length >= 1) {
+                // 분할된 파일 목록
+                if (result.parts && result.parts.length > 0) {
                     partsEl.innerHTML = result.parts.map(part => `
                         <div class="part-item">
                             <div class="part-info">
                                 <div class="part-title">파트 ${part.partNumber}</div>
                                 <div class="part-details">
-                                    크기: ${formatSize(part.size)} | 
-                                    길이: ${Math.round(part.duration)}초
-                                    ${part.startTime !== undefined ? ` | 시작: ${Math.round(part.startTime)}초` : ''}
+                                    크기: ${formatSize(part.size)}
+                                    ${part.duration ? `| 길이: ${Math.round(part.duration)}초` : ''}
+                                    ${part.startTime !== undefined ? `| 시작: ${Math.round(part.startTime)}초` : ''}
                                 </div>
                                 ${part.qualityChange ? `
                                     <div class="quality-change">
@@ -887,7 +1008,13 @@
                                     </div>
                                 ` : ''}
                             </div>
-                            <a href="${part.outputPath}" class="download-btn" download>다운로드</a>
+                            ${part.base64 ? `
+                                <div class="base64-actions">
+                                    <button onclick="copyToClipboard('${part.base64}')">Base64 복사</button>
+                                </div>
+                            ` : `
+                                <a href="${part.outputPath}" class="download-btn" download>다운로드</a>
+                            `}
                         </div>
                     `).join('');
                 } else {
@@ -914,6 +1041,16 @@
         // 결과 숨기기
         function hideResult() {
             document.getElementById('result-container').style.display = 'none';
+        }
+
+        // 클립보드에 복사
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Base64 데이터가 클립보드에 복사되었습니다.');
+            }, (err) => {
+                alert('클립보드 복사에 실패했습니다.');
+                console.error('클립보드 복사 오류:', err);
+            });
         }
 
         // API 상태 확인
