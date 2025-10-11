@@ -308,6 +308,16 @@
             background: #5a6268;
         }
 
+        .base64-preview {
+            margin-top: 15px;
+        }
+
+        .base64-preview img,
+        .base64-preview video {
+            max-width: 100%;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
 
         .process-btn {
             background-color: #007BFF;
@@ -974,13 +984,18 @@
                 
                 // 다운로드 링크
                 if (result.base64) {
+                    const isImage = result.base64.startsWith('data:image');
+                    const isVideo = result.base64.startsWith('data:video');
+
                     downloadEl.innerHTML = `
                         <div class="base64-output">
-                            <div class="info-label">Base64 데이터 (일부)</div>
-                            <textarea readonly>${result.base64.substring(0, 100)}...</textarea>
+                            <div class="info-label">Base64 데이터 URI</div>
+                            <textarea readonly>${result.base64.substring(0, 150)}...</textarea>
                             <div class="base64-actions">
                                 <button onclick="copyToClipboard('${result.base64}')">전체 복사</button>
                             </div>
+                            ${isImage ? `<div class="base64-preview"><img src="${result.base64}" alt="처리 결과 이미지"></div>` : ''}
+                            ${isVideo ? `<div class="base64-preview"><video src="${result.base64}" controls></video></div>` : ''}
                         </div>
                     `;
                 } else if (result.outputPath) {
@@ -1007,14 +1022,15 @@
                                         화질 변경 감지: ${part.qualityChange.type} (${part.qualityChange.from} → ${part.qualityChange.to})
                                     </div>
                                 ` : ''}
+                                ${part.base64 ? `
+                                    <div class="base64-output" style="margin-top: 10px;">
+                                        <div class="base64-actions">
+                                            <button onclick="copyToClipboard('${part.base64}')">Base64 복사</button>
+                                        </div>
+                                    </div>
+                                ` : ''}
                             </div>
-                            ${part.base64 ? `
-                                <div class="base64-actions">
-                                    <button onclick="copyToClipboard('${part.base64}')">Base64 복사</button>
-                                </div>
-                            ` : `
-                                <a href="${part.outputPath}" class="download-btn" download>다운로드</a>
-                            `}
+                            ${!part.base64 ? `<a href="${part.outputPath}" class="download-btn" download>다운로드</a>` : ''}
                         </div>
                     `).join('');
                 } else {

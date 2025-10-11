@@ -10,6 +10,38 @@ const { compressVideo, splitVideo } = require('./services/videoCompression');
 const { detectWebMQualityChange } = require('./services/webmProcessor');
 
 /**
+ * 파일 경로 또는 결과 객체로부터 MIME 타입을 결정합니다.
+ * @param {string} outputPath - 파일 경로
+ * @param {Object} result - 서비스 함수의 결과 객체
+ * @returns {string} MIME 타입 문자열
+ */
+function getMimeType(outputPath, result) {
+  const extension = path.extname(outputPath).toLowerCase();
+  
+  if (result && result.format) {
+    return `image/${result.format}`;
+  }
+  
+  switch (extension) {
+    case '.jpeg':
+    case '.jpg':
+      return 'image/jpeg';
+    case '.png':
+      return 'image/png';
+    case '.webp':
+      return 'image/webp';
+    case '.gif':
+      return 'image/gif';
+    case '.mp4':
+      return 'video/mp4';
+    case '.webm':
+      return 'video/webm';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+/**
  * 결과 객체에 Base64 인코딩된 파일 데이터를 추가합니다.
  * @param {Object} result - 서비스 함수에서 반환된 결과 객체
  * @param {boolean} returnBase64 - Base64 반환 여부
@@ -26,7 +58,8 @@ async function addBase64ToResult(result, returnBase64) {
       const filePath = path.join(__dirname, 'output', path.basename(result.outputPath));
       if (await fs.pathExists(filePath)) {
         const fileData = await fs.readFile(filePath);
-        result.base64 = fileData.toString('base64');
+        const mimeType = getMimeType(result.outputPath, result);
+        result.base64 = `data:${mimeType};base64,${fileData.toString('base64')}`;
       }
     }
 
@@ -36,7 +69,8 @@ async function addBase64ToResult(result, returnBase64) {
           const filePath = path.join(__dirname, 'output', path.basename(part.outputPath));
           if (await fs.pathExists(filePath)) {
             const fileData = await fs.readFile(filePath);
-            part.base64 = fileData.toString('base64');
+            const mimeType = getMimeType(part.outputPath);
+            part.base64 = `data:${mimeType};base64,${fileData.toString('base64')}`;
           }
         }
       }
