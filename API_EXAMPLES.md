@@ -156,7 +156,7 @@ compress_image('image.jpg', 500)
   "format": "jpeg",
   "outputPath": "/output/compressed_1728378900123_image.jpg",
   "action": "compressed",
-  "base64": "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg=="
+  "base64": "data:image/jpeg;base64,iVBORw0KGgoAAA..."
 }
 ```
 
@@ -275,7 +275,7 @@ compress_video('video.mp4', 51200, 'split')  # 50MB = 51200KB
   "compressedSize": 100352,
   "outputPath": "/output/compressed_1728378900123_video.mp4",
   "action": "compressed",
-  "base64": "AAAAIGZ0eX... (video data)"
+  "base64": "data:video/mp4;base64,AAAAIGZ0eX... (video data)"
 }
 ```
 
@@ -324,19 +324,19 @@ compress_video('video.mp4', 51200, 'split')  # 50MB = 51200KB
       "partNumber": 1,
       "size": 49152,
       "outputPath": "/output/split_1728378900123_video_part1.mp4",
-      "base64": "AAAAIGZ0eX... (part 1 video data)"
+      "base64": "data:video/mp4;base64,AAAAIGZ0eX... (part 1 video data)"
     },
     {
       "partNumber": 2,
       "size": 49152,
       "outputPath": "/output/split_1728378900124_video_part2.mp4",
-      "base64": "AAAAIGZ0eX... (part 2 video data)"
+      "base64": "data:video/mp4;base64,AAAAIGZ0eX... (part 2 video data)"
     },
     {
       "partNumber": 3,
       "size": 49152,
       "outputPath": "/output/split_1728378900125_video_part3.mp4",
-      "base64": "AAAAIGZ0eX... (part 3 video data)"
+      "base64": "data:video/mp4;base64,AAAAIGZ0eX... (part 3 video data)"
     }
   ],
   "action": "split"
@@ -460,13 +460,13 @@ splitWebM(webmFile, 51200, true); // Base64 데이터 포함
       "partNumber": 1,
       "size": 46080,
       "outputPath": "/output/webm_1728378900123_video_part1.webm",
-      "base64": "GkXfo6NChoEBQ... (part 1 webm data)"
+      "base64": "data:video/webm;base64,GkXfo6NChoEBQ... (part 1 webm data)"
     },
     {
       "partNumber": 2,
       "size": 43008,
       "outputPath": "/output/webm_1728378900124_video_part2.webm",
-      "base64": "GkXfo6NChoEBQ... (part 2 webm data)"
+      "base64": "data:video/webm;base64,GkXfo6NChoEBQ... (part 2 webm data)"
     }
   ],
   "action": "split_with_quality_detection"
