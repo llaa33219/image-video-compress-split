@@ -61,92 +61,49 @@ async function compressVideo(inputPath, targetSizeKB) {
     let finalBitrate;
     
     if (isWebM) {
-      // WebM: 2-pass 인코딩으로 정확한 비트레이트 제어
+      // WebM: VP9 1-pass CRF 인코딩 (빠른 속도 + 좋은 압축률)
       const targetBitrate = initialTargetBitrate;
-      const passLogFile = path.join(outputDir, `passlog_${Date.now()}`);
-      const nullOutput = process.platform === 'win32' ? 'NUL' : '/dev/null';
       
-      console.log(`WebM 2-pass 인코딩 시작 - 목표 비트레이트: ${targetBitrate}kbps`);
+      console.log(`WebM VP9 CRF 인코딩 시작 - 최대 비트레이트: ${targetBitrate}kbps`);
       
-      // 1st pass: 분석
-      console.log('1st pass 시작...');
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .outputOptions([
-            '-c:v libvpx',
-            '-b:v ' + targetBitrate + 'k',
-            '-pass 1',
-            '-passlogfile ' + passLogFile,
-            '-cpu-used 4',
-            '-deadline good',
-            '-threads 0',
-            '-an',
-            '-f webm'
-          ])
-          .output(nullOutput)
-          .on('start', (cmd) => {
-            console.log('1st pass 명령어:', cmd);
-          })
-          .on('progress', (progress) => {
-            console.log(`1st pass 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
-          })
-          .on('end', () => {
-            console.log('1st pass 완료');
-            resolve();
-          })
-          .on('error', (err) => {
-            console.error('1st pass 오류:', err);
-            reject(err);
-          })
-          .run();
-      });
-      
-      // 2nd pass: 실제 인코딩
-      console.log('2nd pass 시작...');
-      await new Promise((resolve, reject) => {
-        ffmpeg(inputPath)
-          .outputOptions([
-            '-c:v libvpx',
+            '-c:v libvpx-vp9',
             '-c:a libvorbis',
+            '-crf 32',
             '-b:v ' + targetBitrate + 'k',
+            '-maxrate ' + targetBitrate + 'k',
+            '-bufsize ' + (targetBitrate * 2) + 'k',
             '-b:a ' + audioBitrate + 'k',
-            '-pass 2',
-            '-passlogfile ' + passLogFile,
             '-cpu-used 4',
             '-deadline good',
+            '-row-mt 1',
             '-threads 0'
           ])
           .output(outputPath)
           .on('start', (cmd) => {
-            console.log('2nd pass 명령어:', cmd);
+            console.log('인코딩 명령어:', cmd);
           })
           .on('progress', (progress) => {
-            console.log(`2nd pass 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+            console.log(`인코딩 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
           })
           .on('end', () => {
-            console.log('2nd pass 완료');
+            console.log('인코딩 완료');
             resolve();
           })
           .on('error', (err) => {
-            console.error('2nd pass 오류:', err);
+            console.error('인코딩 오류:', err);
             reject(err);
           })
           .run();
       });
-      
-      // passlog 파일 삭제
-      try {
-        await fs.remove(passLogFile + '-0.log');
-        await fs.remove(passLogFile + '.log');
-      } catch (e) {
-        // passlog 파일이 없어도 무시
-      }
       
       const compressedStats = await fs.stat(outputPath);
       compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
       finalBitrate = targetBitrate;
       
-      console.log(`WebM 2-pass 인코딩 완료: ${compressedSizeKB}KB (목표: ${targetSizeKB}KB)`);
+      console.log(`WebM VP9 인코딩 완료: ${compressedSizeKB}KB (목표: ${targetSizeKB}KB)`);
     } else {
       // MP4: 기존 1회 압축
       const targetBitrate = initialTargetBitrate;
@@ -278,82 +235,43 @@ async function splitVideo(inputPath, targetSizeKB) {
       let partSizeKB;
       
       if (isWebM) {
-        // WebM: 2-pass 인코딩으로 정확한 비트레이트 제어
-        const passLogFile = path.join(outputDir, `passlog_split_${Date.now()}_${i}`);
-        const nullOutput = process.platform === 'win32' ? 'NUL' : '/dev/null';
+        // WebM: VP9 1-pass CRF 인코딩 (빠른 속도 + 좋은 압축률)
+        console.log(`파트 ${i + 1} VP9 CRF 인코딩 시작 - 최대 비트레이트: ${currentBitrate}kbps`);
         
-        console.log(`파트 ${i + 1} 2-pass 인코딩 시작 - 비트레이트: ${currentBitrate}kbps`);
-        
-        // 1st pass
         await new Promise((resolve, reject) => {
           ffmpeg(inputPath)
             .setStartTime(segmentStartTime)
             .setDuration(segmentDuration)
             .outputOptions([
-              '-c:v libvpx',
-              '-b:v ' + currentBitrate + 'k',
-              '-pass 1',
-              '-passlogfile ' + passLogFile,
-              '-cpu-used 4',
-              '-deadline good',
-              '-threads 0',
-              '-an',
-              '-f webm'
-            ])
-            .output(nullOutput)
-            .on('start', (cmd) => {
-              console.log(`파트 ${i + 1} 1st pass 명령어:`, cmd);
-            })
-            .on('end', () => {
-              console.log(`파트 ${i + 1} 1st pass 완료`);
-              resolve();
-            })
-            .on('error', (err) => {
-              console.error(`파트 ${i + 1} 1st pass 오류:`, err);
-              reject(err);
-            })
-            .run();
-        });
-        
-        // 2nd pass
-        await new Promise((resolve, reject) => {
-          ffmpeg(inputPath)
-            .setStartTime(segmentStartTime)
-            .setDuration(segmentDuration)
-            .outputOptions([
-              '-c:v libvpx',
+              '-c:v libvpx-vp9',
               '-c:a libvorbis',
+              '-crf 32',
               '-b:v ' + currentBitrate + 'k',
+              '-maxrate ' + currentBitrate + 'k',
+              '-bufsize ' + (currentBitrate * 2) + 'k',
               '-b:a ' + audioBitrate + 'k',
-              '-pass 2',
-              '-passlogfile ' + passLogFile,
               '-cpu-used 4',
               '-deadline good',
+              '-row-mt 1',
               '-threads 0'
             ])
             .output(outputPath)
             .on('start', (cmd) => {
-              console.log(`파트 ${i + 1} 2nd pass 명령어:`, cmd);
+              console.log(`파트 ${i + 1} 인코딩 명령어:`, cmd);
             })
             .on('progress', (progress) => {
-              console.log(`파트 ${i + 1} 2nd pass 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+              console.log(`파트 ${i + 1} 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
             })
             .on('end', () => {
-              console.log(`파트 ${i + 1} 2nd pass 완료`);
+              console.log(`파트 ${i + 1} 인코딩 완료`);
               resolve();
             })
             .on('error', (err) => {
-              console.error(`파트 ${i + 1} 2nd pass 오류:`, err);
+              console.error(`파트 ${i + 1} 인코딩 오류:`, err);
               reject(err);
             })
             .run();
         });
-        
-        // passlog 파일 삭제
-        try {
-          await fs.remove(passLogFile + '-0.log');
-          await fs.remove(passLogFile + '.log');
-        } catch (e) {}
         
         const partStats = await fs.stat(outputPath);
         partSizeKB = (partStats.size / 1024).toFixed(2);
