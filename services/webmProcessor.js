@@ -83,61 +83,88 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       let currentBitrate = Math.max(segmentTargetBitrate - audioBitrate, 64);
       
       let partSizeKB;
-      const maxAttempts = 2;
       
-      // 반복 압축으로 목표 용량 달성
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        console.log(`WebM 파트 ${i + 1} 압축 시도 ${attempt}/${maxAttempts} - 비트레이트: ${currentBitrate}kbps`);
-        
-        await new Promise((resolve, reject) => {
-          ffmpeg(inputPath)
-            .setStartTime(segment.startTime)
-            .setDuration(segment.duration)
-            .outputOptions([
-              '-c:v libvpx',
-              '-c:a libvorbis',
-              '-b:v ' + currentBitrate + 'k',
-              '-b:a ' + audioBitrate + 'k',
-              '-cpu-used 16',
-              '-deadline realtime',
-              '-threads 0'
-            ])
-            .output(outputPath)
-            .on('start', (cmd) => {
-              console.log(`FFmpeg 명령어 실행 (WebM 파트 ${i + 1}/${segments.length}):`, cmd);
-            })
-            .on('progress', (progress) => {
-              console.log(`WebM 파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
-            })
-            .on('end', () => {
-              console.log(`WebM 파트 ${i + 1} 시도 ${attempt} 완료`);
-              resolve();
-            })
-            .on('error', (err) => {
-              console.error(`WebM 파트 ${i + 1} 오류:`, err);
-              reject(err);
-            })
-            .run();
-        });
-        
-        const partStats = await fs.stat(outputPath);
-        partSizeKB = (partStats.size / 1024).toFixed(2);
-        
-        console.log(`WebM 파트 ${i + 1} 시도 ${attempt} 결과: ${partSizeKB}KB (목표: ${targetSizeKB}KB)`);
-        
-        // 목표 용량의 110% 이하면 성공
-        if (parseFloat(partSizeKB) <= targetSizeKB * 1.1) {
-          break;
-        }
-        
-        // 다음 시도를 위해 비트레이트 조정
-        if (attempt < maxAttempts) {
-          currentBitrate = Math.floor(currentBitrate * (targetSizeKB / parseFloat(partSizeKB)) * 0.85);
-          currentBitrate = Math.max(currentBitrate, 32);
-          await fs.remove(outputPath);
-          outputPath = path.join(outputDir, `webm_${Date.now()}_${baseFileName}_part${i + 1}.webm`);
-        }
-      }
+      // WebM: 2-pass 인코딩으로 정확한 비트레이트 제어
+      const passLogFile = path.join(outputDir, `passlog_webm_${Date.now()}_${i}`);
+      const nullOutput = process.platform === 'win32' ? 'NUL' : '/dev/null';
+      
+      console.log(`WebM 파트 ${i + 1} 2-pass 인코딩 시작 - 비트레이트: ${currentBitrate}kbps`);
+      
+      // 1st pass
+      await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .setStartTime(segment.startTime)
+          .setDuration(segment.duration)
+          .outputOptions([
+            '-c:v libvpx',
+            '-b:v ' + currentBitrate + 'k',
+            '-pass 1',
+            '-passlogfile ' + passLogFile,
+            '-cpu-used 4',
+            '-deadline good',
+            '-threads 0',
+            '-an',
+            '-f webm'
+          ])
+          .output(nullOutput)
+          .on('start', (cmd) => {
+            console.log(`WebM 파트 ${i + 1} 1st pass 명령어:`, cmd);
+          })
+          .on('end', () => {
+            console.log(`WebM 파트 ${i + 1} 1st pass 완료`);
+            resolve();
+          })
+          .on('error', (err) => {
+            console.error(`WebM 파트 ${i + 1} 1st pass 오류:`, err);
+            reject(err);
+          })
+          .run();
+      });
+      
+      // 2nd pass
+      await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .setStartTime(segment.startTime)
+          .setDuration(segment.duration)
+          .outputOptions([
+            '-c:v libvpx',
+            '-c:a libvorbis',
+            '-b:v ' + currentBitrate + 'k',
+            '-b:a ' + audioBitrate + 'k',
+            '-pass 2',
+            '-passlogfile ' + passLogFile,
+            '-cpu-used 4',
+            '-deadline good',
+            '-threads 0'
+          ])
+          .output(outputPath)
+          .on('start', (cmd) => {
+            console.log(`WebM 파트 ${i + 1} 2nd pass 명령어:`, cmd);
+          })
+          .on('progress', (progress) => {
+            console.log(`WebM 파트 ${i + 1} 2nd pass 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+          })
+          .on('end', () => {
+            console.log(`WebM 파트 ${i + 1} 2nd pass 완료`);
+            resolve();
+          })
+          .on('error', (err) => {
+            console.error(`WebM 파트 ${i + 1} 2nd pass 오류:`, err);
+            reject(err);
+          })
+          .run();
+      });
+      
+      // passlog 파일 삭제
+      try {
+        await fs.remove(passLogFile + '-0.log');
+        await fs.remove(passLogFile + '.log');
+      } catch (e) {}
+      
+      const partStats = await fs.stat(outputPath);
+      partSizeKB = (partStats.size / 1024).toFixed(2);
+      
+      console.log(`WebM 파트 ${i + 1} 2-pass 인코딩 완료: ${partSizeKB}KB (목표: ${targetSizeKB}KB)`);
       
       parts.push({
         partNumber: i + 1,

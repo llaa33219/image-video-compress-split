@@ -61,68 +61,92 @@ async function compressVideo(inputPath, targetSizeKB) {
     let finalBitrate;
     
     if (isWebM) {
-      // WebM: 반복 압축으로 목표 용량 달성
-      let currentBitrate = initialTargetBitrate;
-      const maxAttempts = 3;
+      // WebM: 2-pass 인코딩으로 정확한 비트레이트 제어
+      const targetBitrate = initialTargetBitrate;
+      const passLogFile = path.join(outputDir, `passlog_${Date.now()}`);
+      const nullOutput = process.platform === 'win32' ? 'NUL' : '/dev/null';
       
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        console.log(`WebM 압축 시도 ${attempt}/${maxAttempts} - 비트레이트: ${currentBitrate}kbps`);
-        
-        const outputOptions = [
-          '-c:v libvpx',
-          '-c:a libvorbis',
-          '-b:v ' + currentBitrate + 'k',
-          '-b:a ' + audioBitrate + 'k',
-          '-cpu-used 16',
-          '-deadline realtime',
-          '-threads 0'
-        ];
-        
-        await new Promise((resolve, reject) => {
-          ffmpeg(inputPath)
-            .outputOptions(outputOptions)
-            .output(outputPath)
-            .on('start', (cmd) => {
-              console.log('FFmpeg 명령어 실행:', cmd);
-            })
-            .on('progress', (progress) => {
-              console.log(`압축 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
-            })
-            .on('end', () => {
-              console.log(`압축 시도 ${attempt} 완료`);
-              resolve();
-            })
-            .on('error', (err) => {
-              console.error('압축 오류:', err);
-              reject(err);
-            })
-            .run();
-        });
-        
-        // 압축된 파일 크기 확인
-        const compressedStats = await fs.stat(outputPath);
-        compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
-        finalBitrate = currentBitrate;
-        
-        console.log(`시도 ${attempt} 결과: ${compressedSizeKB}KB (목표: ${targetSizeKB}KB)`);
-        
-        // 목표 용량의 110% 이하면 성공
-        if (parseFloat(compressedSizeKB) <= targetSizeKB * 1.1) {
-          console.log('목표 용량 달성!');
-          break;
-        }
-        
-        // 다음 시도를 위해 비트레이트 조정
-        if (attempt < maxAttempts) {
-          // 비율에 따라 비트레이트 감소 (0.85 계수로 더 공격적으로)
-          currentBitrate = Math.floor(currentBitrate * (targetSizeKB / parseFloat(compressedSizeKB)) * 0.85);
-          currentBitrate = Math.max(currentBitrate, 32); // 최소 32kbps
-          
-          // 이전 파일 삭제 후 새 파일명으로 재시도
-          await fs.remove(outputPath);
-          outputPath = path.join(outputDir, `compressed_${Date.now()}_${baseFileName}${outputExt}`);
-        }
+      console.log(`WebM 2-pass 인코딩 시작 - 목표 비트레이트: ${targetBitrate}kbps`);
+      
+      // 1st pass: 분석
+      console.log('1st pass 시작...');
+      await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .outputOptions([
+            '-c:v libvpx',
+            '-b:v ' + targetBitrate + 'k',
+            '-pass 1',
+            '-passlogfile ' + passLogFile,
+            '-cpu-used 4',
+            '-deadline good',
+            '-threads 0',
+            '-an',
+            '-f webm'
+          ])
+          .output(nullOutput)
+          .on('start', (cmd) => {
+            console.log('1st pass 명령어:', cmd);
+          })
+          .on('progress', (progress) => {
+            console.log(`1st pass 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+          })
+          .on('end', () => {
+            console.log('1st pass 완료');
+            resolve();
+          })
+          .on('error', (err) => {
+            console.error('1st pass 오류:', err);
+            reject(err);
+          })
+          .run();
+      });
+      
+      // 2nd pass: 실제 인코딩
+      console.log('2nd pass 시작...');
+      await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .outputOptions([
+            '-c:v libvpx',
+            '-c:a libvorbis',
+            '-b:v ' + targetBitrate + 'k',
+            '-b:a ' + audioBitrate + 'k',
+            '-pass 2',
+            '-passlogfile ' + passLogFile,
+            '-cpu-used 4',
+            '-deadline good',
+            '-threads 0'
+          ])
+          .output(outputPath)
+          .on('start', (cmd) => {
+            console.log('2nd pass 명령어:', cmd);
+          })
+          .on('progress', (progress) => {
+            console.log(`2nd pass 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+          })
+          .on('end', () => {
+            console.log('2nd pass 완료');
+            resolve();
+          })
+          .on('error', (err) => {
+            console.error('2nd pass 오류:', err);
+            reject(err);
+          })
+          .run();
+      });
+      
+      // passlog 파일 삭제
+      try {
+        await fs.remove(passLogFile + '-0.log');
+        await fs.remove(passLogFile + '.log');
+      } catch (e) {
+        // passlog 파일이 없어도 무시
       }
+      
+      const compressedStats = await fs.stat(outputPath);
+      compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
+      finalBitrate = targetBitrate;
+      
+      console.log(`WebM 2-pass 인코딩 완료: ${compressedSizeKB}KB (목표: ${targetSizeKB}KB)`);
     } else {
       // MP4: 기존 1회 압축
       const targetBitrate = initialTargetBitrate;
@@ -254,61 +278,85 @@ async function splitVideo(inputPath, targetSizeKB) {
       let partSizeKB;
       
       if (isWebM) {
-        // WebM: 반복 압축으로 목표 용량 달성
-        const maxAttempts = 2;
+        // WebM: 2-pass 인코딩으로 정확한 비트레이트 제어
+        const passLogFile = path.join(outputDir, `passlog_split_${Date.now()}_${i}`);
+        const nullOutput = process.platform === 'win32' ? 'NUL' : '/dev/null';
         
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          console.log(`파트 ${i + 1} 압축 시도 ${attempt}/${maxAttempts} - 비트레이트: ${currentBitrate}kbps`);
-          
-          const outputOptions = [
-            '-c:v libvpx',
-            '-c:a libvorbis',
-            '-b:v ' + currentBitrate + 'k',
-            '-b:a ' + audioBitrate + 'k',
-            '-cpu-used 16',
-            '-deadline realtime',
-            '-threads 0'
-          ];
-          
-          await new Promise((resolve, reject) => {
-            ffmpeg(inputPath)
-              .setStartTime(segmentStartTime)
-              .setDuration(segmentDuration)
-              .outputOptions(outputOptions)
-              .output(outputPath)
-              .on('start', (cmd) => {
-                console.log(`FFmpeg 명령어 실행 (파트 ${i + 1}/${totalParts}):`, cmd);
-              })
-              .on('progress', (progress) => {
-                console.log(`파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
-              })
-              .on('end', () => {
-                console.log(`파트 ${i + 1} 시도 ${attempt} 완료`);
-                resolve();
-              })
-              .on('error', (err) => {
-                console.error(`파트 ${i + 1} 오류:`, err);
-                reject(err);
-              })
-              .run();
-          });
-          
-          const partStats = await fs.stat(outputPath);
-          partSizeKB = (partStats.size / 1024).toFixed(2);
-          
-          // 목표 용량의 110% 이하면 성공
-          if (parseFloat(partSizeKB) <= targetSizeKB * 1.1) {
-            break;
-          }
-          
-          // 다음 시도를 위해 비트레이트 조정
-          if (attempt < maxAttempts) {
-            currentBitrate = Math.floor(currentBitrate * (targetSizeKB / parseFloat(partSizeKB)) * 0.85);
-            currentBitrate = Math.max(currentBitrate, 32);
-            await fs.remove(outputPath);
-            outputPath = path.join(outputDir, `split_${Date.now()}_${baseFileName}_part${i + 1}${outputExt}`);
-          }
-        }
+        console.log(`파트 ${i + 1} 2-pass 인코딩 시작 - 비트레이트: ${currentBitrate}kbps`);
+        
+        // 1st pass
+        await new Promise((resolve, reject) => {
+          ffmpeg(inputPath)
+            .setStartTime(segmentStartTime)
+            .setDuration(segmentDuration)
+            .outputOptions([
+              '-c:v libvpx',
+              '-b:v ' + currentBitrate + 'k',
+              '-pass 1',
+              '-passlogfile ' + passLogFile,
+              '-cpu-used 4',
+              '-deadline good',
+              '-threads 0',
+              '-an',
+              '-f webm'
+            ])
+            .output(nullOutput)
+            .on('start', (cmd) => {
+              console.log(`파트 ${i + 1} 1st pass 명령어:`, cmd);
+            })
+            .on('end', () => {
+              console.log(`파트 ${i + 1} 1st pass 완료`);
+              resolve();
+            })
+            .on('error', (err) => {
+              console.error(`파트 ${i + 1} 1st pass 오류:`, err);
+              reject(err);
+            })
+            .run();
+        });
+        
+        // 2nd pass
+        await new Promise((resolve, reject) => {
+          ffmpeg(inputPath)
+            .setStartTime(segmentStartTime)
+            .setDuration(segmentDuration)
+            .outputOptions([
+              '-c:v libvpx',
+              '-c:a libvorbis',
+              '-b:v ' + currentBitrate + 'k',
+              '-b:a ' + audioBitrate + 'k',
+              '-pass 2',
+              '-passlogfile ' + passLogFile,
+              '-cpu-used 4',
+              '-deadline good',
+              '-threads 0'
+            ])
+            .output(outputPath)
+            .on('start', (cmd) => {
+              console.log(`파트 ${i + 1} 2nd pass 명령어:`, cmd);
+            })
+            .on('progress', (progress) => {
+              console.log(`파트 ${i + 1} 2nd pass 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+            })
+            .on('end', () => {
+              console.log(`파트 ${i + 1} 2nd pass 완료`);
+              resolve();
+            })
+            .on('error', (err) => {
+              console.error(`파트 ${i + 1} 2nd pass 오류:`, err);
+              reject(err);
+            })
+            .run();
+        });
+        
+        // passlog 파일 삭제
+        try {
+          await fs.remove(passLogFile + '-0.log');
+          await fs.remove(passLogFile + '.log');
+        } catch (e) {}
+        
+        const partStats = await fs.stat(outputPath);
+        partSizeKB = (partStats.size / 1024).toFixed(2);
       } else {
         // MP4: 1회 압축
         const outputOptions = [
