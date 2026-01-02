@@ -52,20 +52,27 @@ async function compressVideo(inputPath, targetSizeKB) {
     const videoInfo = await getVideoInfo(inputPath);
     
     // 목표 비트레이트 계산 (kbps)
-    const targetBitrate = Math.floor((targetSizeKB * 8) / videoInfo.duration);
+    let targetBitrate = Math.floor((targetSizeKB * 8) / videoInfo.duration);
+    
+    // 원본 비트레이트보다 높으면 원본의 70%로 제한 (크기 증가 방지)
+    const originalBitrateKbps = Math.floor(videoInfo.bitrate / 1000);
+    if (originalBitrateKbps > 0 && targetBitrate > originalBitrateKbps) {
+      targetBitrate = Math.floor(originalBitrateKbps * 0.7);
+    }
     
     const outputPath = path.join(outputDir, `compressed_${Date.now()}_${baseFileName}${outputExt}`);
     
     // 코덱 및 옵션 설정 (파일 형식에 따라 다르게)
+    // WebM: VP8 (libvpx) 사용 - VP9보다 훨씬 빠름
     const outputOptions = isWebM ? [
-      '-c:v libvpx-vp9',
-      '-c:a libopus',
+      '-c:v libvpx',
+      '-c:a libvorbis',
       '-b:v ' + targetBitrate + 'k',
       '-b:a 128k',
       '-maxrate ' + targetBitrate + 'k',
       '-bufsize ' + (targetBitrate * 2) + 'k',
-      '-deadline good',
-      '-cpu-used 2'
+      '-deadline realtime',
+      '-cpu-used 5'
     ] : [
       '-c:v libx264',
       '-c:a aac',
@@ -181,15 +188,19 @@ async function splitVideo(inputPath, targetSizeKB) {
     
     const parts = [];
     
+    // 분할 시 비트레이트 계산 (원본 비트레이트의 70%로 제한)
+    const originalBitrateKbps = Math.floor(videoInfo.bitrate / 1000);
+    const splitBitrate = originalBitrateKbps > 0 ? Math.floor(originalBitrateKbps * 0.7) : 1000;
+    
     // 코덱 및 옵션 설정 (파일 형식에 따라 다르게)
+    // WebM: VP8 (libvpx) 사용 - VP9보다 훨씬 빠름
     const outputOptions = isWebM ? [
-      '-c:v libvpx-vp9',
-      '-c:a libopus',
+      '-c:v libvpx',
+      '-c:a libvorbis',
+      '-b:v ' + splitBitrate + 'k',
       '-b:a 128k',
-      '-crf 30',
-      '-b:v 0',
-      '-deadline good',
-      '-cpu-used 2'
+      '-deadline realtime',
+      '-cpu-used 5'
     ] : [
       '-c:v libx264',
       '-c:a aac',
