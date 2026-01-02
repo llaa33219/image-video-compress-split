@@ -52,13 +52,10 @@ async function compressVideo(inputPath, targetSizeKB) {
     const videoInfo = await getVideoInfo(inputPath);
     
     // 목표 비트레이트 계산 (kbps)
-    let targetBitrate = Math.floor((targetSizeKB * 8) / videoInfo.duration);
-    
-    // 원본 비트레이트보다 높으면 원본의 70%로 제한 (크기 증가 방지)
-    const originalBitrateKbps = Math.floor(videoInfo.bitrate / 1000);
-    if (originalBitrateKbps > 0 && targetBitrate > originalBitrateKbps) {
-      targetBitrate = Math.floor(originalBitrateKbps * 0.7);
-    }
+    // 오디오 비트레이트(128kbps)를 제외한 비디오 비트레이트 계산
+    const audioBitrate = 128; // kbps
+    const totalTargetBitrate = Math.floor((targetSizeKB * 8) / videoInfo.duration);
+    const targetBitrate = Math.max(totalTargetBitrate - audioBitrate, 64); // 최소 64kbps 보장
     
     const outputPath = path.join(outputDir, `compressed_${Date.now()}_${baseFileName}${outputExt}`);
     
@@ -188,9 +185,10 @@ async function splitVideo(inputPath, targetSizeKB) {
     
     const parts = [];
     
-    // 분할 시 비트레이트 계산 (원본 비트레이트의 70%로 제한)
-    const originalBitrateKbps = Math.floor(videoInfo.bitrate / 1000);
-    const splitBitrate = originalBitrateKbps > 0 ? Math.floor(originalBitrateKbps * 0.7) : 1000;
+    // 분할 시 비트레이트 계산 (각 파트가 목표 용량에 맞도록)
+    const audioBitrate = 128; // kbps
+    const targetBitratePerPart = Math.floor((targetSizeKB * 8) / segmentDuration);
+    const splitBitrate = Math.max(targetBitratePerPart - audioBitrate, 64); // 최소 64kbps 보장
     
     // 코덱 및 옵션 설정 (파일 형식에 따라 다르게)
     // WebM: VP8 (libvpx) 사용 - VP9보다 훨씬 빠름
