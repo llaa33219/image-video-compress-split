@@ -71,21 +71,31 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
     // 각 세그먼트를 개별 파일로 분할
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
+    const audioBitrate = 128; // kbps
     
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
       const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
       const outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
       
+      // 각 세그먼트의 목표 비트레이트 계산 (목표 용량 기반)
+      const segmentTargetBitrate = Math.floor((targetSizeKB * 8) / segment.duration);
+      const videoBitrate = Math.max(segmentTargetBitrate - audioBitrate, 64); // 최소 64kbps 보장
+      
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .setStartTime(segment.startTime)
           .setDuration(segment.duration)
           .outputOptions([
-            '-c:v libvpx-vp9',
-            '-c:a libopus',
-            '-b:v 0',
-            '-crf 30'
+            '-c:v libvpx',
+            '-c:a libvorbis',
+            '-b:v ' + videoBitrate + 'k',
+            '-b:a 128k',
+            '-minrate ' + Math.floor(videoBitrate * 0.9) + 'k',
+            '-maxrate ' + Math.floor(videoBitrate * 1.1) + 'k',
+            '-bufsize ' + (videoBitrate * 2) + 'k',
+            '-cpu-used 4',
+            '-deadline realtime'
           ])
           .output(outputPath)
           .on('start', (cmd) => {

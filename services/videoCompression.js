@@ -61,15 +61,17 @@ async function compressVideo(inputPath, targetSizeKB) {
     
     // 코덱 및 옵션 설정 (파일 형식에 따라 다르게)
     // WebM: VP8 (libvpx) 사용 - VP9보다 훨씬 빠름
+    // minrate/maxrate로 비트레이트 정확도 향상 (±10% 범위)
     const outputOptions = isWebM ? [
       '-c:v libvpx',
       '-c:a libvorbis',
       '-b:v ' + targetBitrate + 'k',
       '-b:a 128k',
-      '-maxrate ' + targetBitrate + 'k',
+      '-minrate ' + Math.floor(targetBitrate * 0.9) + 'k',
+      '-maxrate ' + Math.floor(targetBitrate * 1.1) + 'k',
       '-bufsize ' + (targetBitrate * 2) + 'k',
-      '-deadline realtime',
-      '-cpu-used 5'
+      '-cpu-used 4',
+      '-deadline realtime'
     ] : [
       '-c:v libx264',
       '-c:a aac',
@@ -84,7 +86,6 @@ async function compressVideo(inputPath, targetSizeKB) {
     // 영상 압축
     await new Promise((resolve, reject) => {
       ffmpeg(inputPath)
-        .videoBitrate(targetBitrate)
         .outputOptions(outputOptions)
         .output(outputPath)
         .on('start', (cmd) => {
@@ -192,13 +193,17 @@ async function splitVideo(inputPath, targetSizeKB) {
     
     // 코덱 및 옵션 설정 (파일 형식에 따라 다르게)
     // WebM: VP8 (libvpx) 사용 - VP9보다 훨씬 빠름
+    // minrate/maxrate로 비트레이트 정확도 향상 (±10% 범위)
     const outputOptions = isWebM ? [
       '-c:v libvpx',
       '-c:a libvorbis',
       '-b:v ' + splitBitrate + 'k',
       '-b:a 128k',
-      '-deadline realtime',
-      '-cpu-used 5'
+      '-minrate ' + Math.floor(splitBitrate * 0.9) + 'k',
+      '-maxrate ' + Math.floor(splitBitrate * 1.1) + 'k',
+      '-bufsize ' + (splitBitrate * 2) + 'k',
+      '-cpu-used 4',
+      '-deadline realtime'
     ] : [
       '-c:v libx264',
       '-c:a aac',
