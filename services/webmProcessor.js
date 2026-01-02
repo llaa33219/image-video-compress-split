@@ -71,53 +71,73 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
     // 각 세그먼트를 개별 파일로 분할
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
-    const audioBitrate = 128; // kbps
+    const audioBitrate = 64; // kbps
     
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
-      const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
-      const outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
+      const timestamp = Date.now() + i;
+      let outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
       
-      // 각 세그먼트의 목표 비트레이트 계산 (목표 용량 기반)
+      // 각 세그먼트의 목표 비트레이트 계산
       const segmentTargetBitrate = Math.floor((targetSizeKB * 8) / segment.duration);
-      const videoBitrate = Math.max(segmentTargetBitrate - audioBitrate, 64); // 최소 64kbps 보장
+      let currentBitrate = Math.max(segmentTargetBitrate - audioBitrate, 64);
       
-      await new Promise((resolve, reject) => {
-        ffmpeg(inputPath)
-          .setStartTime(segment.startTime)
-          .setDuration(segment.duration)
-          .outputOptions([
-            '-c:v libvpx',
-            '-c:a libvorbis',
-            '-b:v ' + videoBitrate + 'k',
-            '-b:a 128k',
-            '-minrate ' + Math.floor(videoBitrate * 0.9) + 'k',
-            '-maxrate ' + Math.floor(videoBitrate * 1.1) + 'k',
-            '-bufsize ' + (videoBitrate * 2) + 'k',
-            '-cpu-used 4',
-            '-deadline realtime'
-          ])
-          .output(outputPath)
-          .on('start', (cmd) => {
-            console.log(`FFmpeg 명령어 실행 (WebM 파트 ${i + 1}/${segments.length}):`, cmd);
-          })
-          .on('progress', (progress) => {
-            console.log(`WebM 파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
-          })
-          .on('end', () => {
-            console.log(`WebM 파트 ${i + 1} 완료`);
-            resolve();
-          })
-          .on('error', (err) => {
-            console.error(`WebM 파트 ${i + 1} 오류:`, err);
-            reject(err);
-          })
-          .run();
-      });
+      let partSizeKB;
+      const maxAttempts = 2;
       
-      // 분할된 파일 크기 확인
-      const partStats = await fs.stat(outputPath);
-      const partSizeKB = (partStats.size / 1024).toFixed(2);
+      // 반복 압축으로 목표 용량 달성
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        console.log(`WebM 파트 ${i + 1} 압축 시도 ${attempt}/${maxAttempts} - 비트레이트: ${currentBitrate}kbps`);
+        
+        await new Promise((resolve, reject) => {
+          ffmpeg(inputPath)
+            .setStartTime(segment.startTime)
+            .setDuration(segment.duration)
+            .outputOptions([
+              '-c:v libvpx',
+              '-c:a libvorbis',
+              '-b:v ' + currentBitrate + 'k',
+              '-b:a ' + audioBitrate + 'k',
+              '-cpu-used 16',
+              '-deadline realtime',
+              '-threads 0'
+            ])
+            .output(outputPath)
+            .on('start', (cmd) => {
+              console.log(`FFmpeg 명령어 실행 (WebM 파트 ${i + 1}/${segments.length}):`, cmd);
+            })
+            .on('progress', (progress) => {
+              console.log(`WebM 파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+            })
+            .on('end', () => {
+              console.log(`WebM 파트 ${i + 1} 시도 ${attempt} 완료`);
+              resolve();
+            })
+            .on('error', (err) => {
+              console.error(`WebM 파트 ${i + 1} 오류:`, err);
+              reject(err);
+            })
+            .run();
+        });
+        
+        const partStats = await fs.stat(outputPath);
+        partSizeKB = (partStats.size / 1024).toFixed(2);
+        
+        console.log(`WebM 파트 ${i + 1} 시도 ${attempt} 결과: ${partSizeKB}KB (목표: ${targetSizeKB}KB)`);
+        
+        // 목표 용량의 110% 이하면 성공
+        if (parseFloat(partSizeKB) <= targetSizeKB * 1.1) {
+          break;
+        }
+        
+        // 다음 시도를 위해 비트레이트 조정
+        if (attempt < maxAttempts) {
+          currentBitrate = Math.floor(currentBitrate * (targetSizeKB / parseFloat(partSizeKB)) * 0.85);
+          currentBitrate = Math.max(currentBitrate, 32);
+          await fs.remove(outputPath);
+          outputPath = path.join(outputDir, `webm_${Date.now()}_${baseFileName}_part${i + 1}.webm`);
+        }
+      }
       
       parts.push({
         partNumber: i + 1,

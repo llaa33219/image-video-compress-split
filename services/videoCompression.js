@@ -52,62 +52,116 @@ async function compressVideo(inputPath, targetSizeKB) {
     const videoInfo = await getVideoInfo(inputPath);
     
     // 목표 비트레이트 계산 (kbps)
-    // 오디오 비트레이트(128kbps)를 제외한 비디오 비트레이트 계산
-    const audioBitrate = 128; // kbps
+    const audioBitrate = 64; // kbps (용량 절약을 위해 낮춤)
     const totalTargetBitrate = Math.floor((targetSizeKB * 8) / videoInfo.duration);
-    const targetBitrate = Math.max(totalTargetBitrate - audioBitrate, 64); // 최소 64kbps 보장
+    const initialTargetBitrate = Math.max(totalTargetBitrate - audioBitrate, 64);
     
-    const outputPath = path.join(outputDir, `compressed_${Date.now()}_${baseFileName}${outputExt}`);
+    let outputPath = path.join(outputDir, `compressed_${Date.now()}_${baseFileName}${outputExt}`);
+    let compressedSizeKB;
+    let finalBitrate;
     
-    // 코덱 및 옵션 설정 (파일 형식에 따라 다르게)
-    // WebM: VP8 (libvpx) 사용 - VP9보다 훨씬 빠름
-    // minrate/maxrate로 비트레이트 정확도 향상 (±10% 범위)
-    const outputOptions = isWebM ? [
-      '-c:v libvpx',
-      '-c:a libvorbis',
-      '-b:v ' + targetBitrate + 'k',
-      '-b:a 128k',
-      '-minrate ' + Math.floor(targetBitrate * 0.9) + 'k',
-      '-maxrate ' + Math.floor(targetBitrate * 1.1) + 'k',
-      '-bufsize ' + (targetBitrate * 2) + 'k',
-      '-cpu-used 4',
-      '-deadline realtime'
-    ] : [
-      '-c:v libx264',
-      '-c:a aac',
-      '-b:a 128k',
-      '-preset fast',
-      '-crf 23',
-      '-maxrate ' + targetBitrate + 'k',
-      '-bufsize ' + (targetBitrate * 2) + 'k',
-      '-movflags +faststart'
-    ];
-    
-    // 영상 압축
-    await new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
-        .outputOptions(outputOptions)
-        .output(outputPath)
-        .on('start', (cmd) => {
-          console.log('FFmpeg 명령어 실행:', cmd);
-        })
-        .on('progress', (progress) => {
-          console.log(`압축 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
-        })
-        .on('end', () => {
-          console.log('압축 완료');
-          resolve();
-        })
-        .on('error', (err) => {
-          console.error('압축 오류:', err);
-          reject(err);
-        })
-        .run();
-    });
-    
-    // 압축된 파일 크기 확인
-    const compressedStats = await fs.stat(outputPath);
-    const compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
+    if (isWebM) {
+      // WebM: 반복 압축으로 목표 용량 달성
+      let currentBitrate = initialTargetBitrate;
+      const maxAttempts = 3;
+      
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        console.log(`WebM 압축 시도 ${attempt}/${maxAttempts} - 비트레이트: ${currentBitrate}kbps`);
+        
+        const outputOptions = [
+          '-c:v libvpx',
+          '-c:a libvorbis',
+          '-b:v ' + currentBitrate + 'k',
+          '-b:a ' + audioBitrate + 'k',
+          '-cpu-used 16',
+          '-deadline realtime',
+          '-threads 0'
+        ];
+        
+        await new Promise((resolve, reject) => {
+          ffmpeg(inputPath)
+            .outputOptions(outputOptions)
+            .output(outputPath)
+            .on('start', (cmd) => {
+              console.log('FFmpeg 명령어 실행:', cmd);
+            })
+            .on('progress', (progress) => {
+              console.log(`압축 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+            })
+            .on('end', () => {
+              console.log(`압축 시도 ${attempt} 완료`);
+              resolve();
+            })
+            .on('error', (err) => {
+              console.error('압축 오류:', err);
+              reject(err);
+            })
+            .run();
+        });
+        
+        // 압축된 파일 크기 확인
+        const compressedStats = await fs.stat(outputPath);
+        compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
+        finalBitrate = currentBitrate;
+        
+        console.log(`시도 ${attempt} 결과: ${compressedSizeKB}KB (목표: ${targetSizeKB}KB)`);
+        
+        // 목표 용량의 110% 이하면 성공
+        if (parseFloat(compressedSizeKB) <= targetSizeKB * 1.1) {
+          console.log('목표 용량 달성!');
+          break;
+        }
+        
+        // 다음 시도를 위해 비트레이트 조정
+        if (attempt < maxAttempts) {
+          // 비율에 따라 비트레이트 감소 (0.85 계수로 더 공격적으로)
+          currentBitrate = Math.floor(currentBitrate * (targetSizeKB / parseFloat(compressedSizeKB)) * 0.85);
+          currentBitrate = Math.max(currentBitrate, 32); // 최소 32kbps
+          
+          // 이전 파일 삭제 후 새 파일명으로 재시도
+          await fs.remove(outputPath);
+          outputPath = path.join(outputDir, `compressed_${Date.now()}_${baseFileName}${outputExt}`);
+        }
+      }
+    } else {
+      // MP4: 기존 1회 압축
+      const targetBitrate = initialTargetBitrate;
+      const outputOptions = [
+        '-c:v libx264',
+        '-c:a aac',
+        '-b:v ' + targetBitrate + 'k',
+        '-b:a ' + audioBitrate + 'k',
+        '-preset fast',
+        '-maxrate ' + targetBitrate + 'k',
+        '-bufsize ' + (targetBitrate * 2) + 'k',
+        '-movflags +faststart'
+      ];
+      
+      await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .outputOptions(outputOptions)
+          .output(outputPath)
+          .on('start', (cmd) => {
+            console.log('FFmpeg 명령어 실행:', cmd);
+          })
+          .on('progress', (progress) => {
+            console.log(`압축 진행 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+          })
+          .on('end', () => {
+            console.log('압축 완료');
+            resolve();
+          })
+          .on('error', (err) => {
+            console.error('압축 오류:', err);
+            reject(err);
+          })
+          .run();
+      });
+      
+      const compressedStats = await fs.stat(outputPath);
+      compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
+      finalBitrate = targetBitrate;
+    }
     
     const compressionRatio = ((parseFloat(originalSizeKB) - parseFloat(compressedSizeKB)) / parseFloat(originalSizeKB) * 100).toFixed(1);
     
@@ -119,7 +173,7 @@ async function compressVideo(inputPath, targetSizeKB) {
       compressionRatio: parseFloat(compressionRatio),
       duration: videoInfo.duration,
       resolution: videoInfo.resolution,
-      bitrate: targetBitrate,
+      bitrate: finalBitrate,
       outputPath: `/output/${path.basename(outputPath)}`,
       action: 'compressed',
       processingTime: `${(Date.now() - startTime) / 1000} 초`
@@ -185,65 +239,113 @@ async function splitVideo(inputPath, targetSizeKB) {
     const segmentDuration = videoInfo.duration / totalParts;
     
     const parts = [];
-    
-    // 분할 시 비트레이트 계산 (각 파트가 목표 용량에 맞도록)
-    const audioBitrate = 128; // kbps
-    const targetBitratePerPart = Math.floor((targetSizeKB * 8) / segmentDuration);
-    const splitBitrate = Math.max(targetBitratePerPart - audioBitrate, 64); // 최소 64kbps 보장
-    
-    // 코덱 및 옵션 설정 (파일 형식에 따라 다르게)
-    // WebM: VP8 (libvpx) 사용 - VP9보다 훨씬 빠름
-    // minrate/maxrate로 비트레이트 정확도 향상 (±10% 범위)
-    const outputOptions = isWebM ? [
-      '-c:v libvpx',
-      '-c:a libvorbis',
-      '-b:v ' + splitBitrate + 'k',
-      '-b:a 128k',
-      '-minrate ' + Math.floor(splitBitrate * 0.9) + 'k',
-      '-maxrate ' + Math.floor(splitBitrate * 1.1) + 'k',
-      '-bufsize ' + (splitBitrate * 2) + 'k',
-      '-cpu-used 4',
-      '-deadline realtime'
-    ] : [
-      '-c:v libx264',
-      '-c:a aac',
-      '-b:a 128k',
-      '-preset fast',
-      '-movflags +faststart'
-    ];
+    const audioBitrate = 64; // kbps
     
     // 각 구간별로 분할
     for (let i = 0; i < totalParts; i++) {
       const segmentStartTime = i * segmentDuration;
-      const timestamp = Date.now() + i; // 각 파일마다 고유한 타임스탬프
-      const outputPath = path.join(outputDir, `split_${timestamp}_${baseFileName}_part${i + 1}${outputExt}`);
+      const timestamp = Date.now() + i;
+      let outputPath = path.join(outputDir, `split_${timestamp}_${baseFileName}_part${i + 1}${outputExt}`);
       
-      await new Promise((resolve, reject) => {
-        ffmpeg(inputPath)
-          .setStartTime(segmentStartTime)
-          .setDuration(segmentDuration)
-          .outputOptions(outputOptions)
-          .output(outputPath)
-          .on('start', (cmd) => {
-            console.log(`FFmpeg 명령어 실행 (파트 ${i + 1}/${totalParts}):`, cmd);
-          })
-          .on('progress', (progress) => {
-            console.log(`파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
-          })
-          .on('end', () => {
-            console.log(`파트 ${i + 1} 완료`);
-            resolve();
-          })
-          .on('error', (err) => {
-            console.error(`파트 ${i + 1} 오류:`, err);
-            reject(err);
-          })
-          .run();
-      });
+      // 목표 비트레이트 계산
+      const targetBitratePerPart = Math.floor((targetSizeKB * 8) / segmentDuration);
+      let currentBitrate = Math.max(targetBitratePerPart - audioBitrate, 64);
       
-      // 분할된 파일 크기 확인
-      const partStats = await fs.stat(outputPath);
-      const partSizeKB = (partStats.size / 1024).toFixed(2);
+      let partSizeKB;
+      
+      if (isWebM) {
+        // WebM: 반복 압축으로 목표 용량 달성
+        const maxAttempts = 2;
+        
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          console.log(`파트 ${i + 1} 압축 시도 ${attempt}/${maxAttempts} - 비트레이트: ${currentBitrate}kbps`);
+          
+          const outputOptions = [
+            '-c:v libvpx',
+            '-c:a libvorbis',
+            '-b:v ' + currentBitrate + 'k',
+            '-b:a ' + audioBitrate + 'k',
+            '-cpu-used 16',
+            '-deadline realtime',
+            '-threads 0'
+          ];
+          
+          await new Promise((resolve, reject) => {
+            ffmpeg(inputPath)
+              .setStartTime(segmentStartTime)
+              .setDuration(segmentDuration)
+              .outputOptions(outputOptions)
+              .output(outputPath)
+              .on('start', (cmd) => {
+                console.log(`FFmpeg 명령어 실행 (파트 ${i + 1}/${totalParts}):`, cmd);
+              })
+              .on('progress', (progress) => {
+                console.log(`파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+              })
+              .on('end', () => {
+                console.log(`파트 ${i + 1} 시도 ${attempt} 완료`);
+                resolve();
+              })
+              .on('error', (err) => {
+                console.error(`파트 ${i + 1} 오류:`, err);
+                reject(err);
+              })
+              .run();
+          });
+          
+          const partStats = await fs.stat(outputPath);
+          partSizeKB = (partStats.size / 1024).toFixed(2);
+          
+          // 목표 용량의 110% 이하면 성공
+          if (parseFloat(partSizeKB) <= targetSizeKB * 1.1) {
+            break;
+          }
+          
+          // 다음 시도를 위해 비트레이트 조정
+          if (attempt < maxAttempts) {
+            currentBitrate = Math.floor(currentBitrate * (targetSizeKB / parseFloat(partSizeKB)) * 0.85);
+            currentBitrate = Math.max(currentBitrate, 32);
+            await fs.remove(outputPath);
+            outputPath = path.join(outputDir, `split_${Date.now()}_${baseFileName}_part${i + 1}${outputExt}`);
+          }
+        }
+      } else {
+        // MP4: 1회 압축
+        const outputOptions = [
+          '-c:v libx264',
+          '-c:a aac',
+          '-b:v ' + currentBitrate + 'k',
+          '-b:a ' + audioBitrate + 'k',
+          '-preset fast',
+          '-movflags +faststart'
+        ];
+        
+        await new Promise((resolve, reject) => {
+          ffmpeg(inputPath)
+            .setStartTime(segmentStartTime)
+            .setDuration(segmentDuration)
+            .outputOptions(outputOptions)
+            .output(outputPath)
+            .on('start', (cmd) => {
+              console.log(`FFmpeg 명령어 실행 (파트 ${i + 1}/${totalParts}):`, cmd);
+            })
+            .on('progress', (progress) => {
+              console.log(`파트 ${i + 1} 처리 중: ${progress.percent ? progress.percent.toFixed(2) : 0}%`);
+            })
+            .on('end', () => {
+              console.log(`파트 ${i + 1} 완료`);
+              resolve();
+            })
+            .on('error', (err) => {
+              console.error(`파트 ${i + 1} 오류:`, err);
+              reject(err);
+            })
+            .run();
+        });
+        
+        const partStats = await fs.stat(outputPath);
+        partSizeKB = (partStats.size / 1024).toFixed(2);
+      }
       
       parts.push({
         partNumber: i + 1,
