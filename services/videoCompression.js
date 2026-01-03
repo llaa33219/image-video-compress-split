@@ -51,35 +51,34 @@ async function compressVideo(inputPath, targetSizeKB) {
     // 영상 정보 가져오기
     const videoInfo = await getVideoInfo(inputPath);
     
-    // 목표 비트레이트 계산 (kbps) - 85%로 설정하여 목표 크기 내 도달 보장
-    const audioBitrate = 64; // kbps (용량 절약을 위해 낮춤)
+    // 목표 비트레이트 계산 (kbps) - 40%로 강하게 설정하여 목표 크기 확실히 달성
+    const audioBitrate = 32; // kbps (최대한 압축)
     const totalTargetBitrate = Math.floor((targetSizeKB * 8) / videoInfo.duration);
-    const initialTargetBitrate = Math.max(Math.floor((totalTargetBitrate - audioBitrate) * 0.85), 64);
+    const initialTargetBitrate = Math.max(Math.floor((totalTargetBitrate - audioBitrate) * 0.4), 32);
     
     let outputPath = path.join(outputDir, `compressed_${Date.now()}_${baseFileName}${outputExt}`);
     let compressedSizeKB;
     let finalBitrate;
     
     if (isWebM) {
-      // WebM: VP9 1-pass VBR 인코딩 (빠른 속도 + 정확한 크기 제어)
+      // WebM: VP8 초고속 인코딩 (품질 희생 + 확실한 크기 달성)
       const targetBitrate = initialTargetBitrate;
       
-      console.log(`WebM VP9 VBR 인코딩 시작 - 목표 비트레이트: ${targetBitrate}kbps`);
+      console.log(`WebM VP8 초고속 인코딩 시작 - 목표 비트레이트: ${targetBitrate}kbps`);
       
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .outputOptions([
-            '-c:v libvpx-vp9',
+            '-c:v libvpx',
             '-c:a libvorbis',
             '-b:v ' + targetBitrate + 'k',
             '-maxrate ' + targetBitrate + 'k',
-            '-bufsize ' + (targetBitrate * 2) + 'k',
+            '-bufsize ' + targetBitrate + 'k',
             '-b:a ' + audioBitrate + 'k',
-            '-cpu-used 6',
-            '-deadline good',
-            '-tile-columns 2',
-            '-tile-rows 1',
-            '-row-mt 1',
+            '-cpu-used 8',
+            '-deadline realtime',
+            '-qmin 30',
+            '-qmax 63',
             '-threads 0'
           ])
           .output(outputPath)
@@ -104,7 +103,7 @@ async function compressVideo(inputPath, targetSizeKB) {
       compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
       finalBitrate = targetBitrate;
       
-      console.log(`WebM VP9 VBR 인코딩 완료: ${compressedSizeKB}KB (목표: ${targetSizeKB}KB)`);
+      console.log(`WebM VP8 인코딩 완료: ${compressedSizeKB}KB (목표: ${targetSizeKB}KB)`);
     } else {
       // MP4: 기존 1회 압축
       const targetBitrate = initialTargetBitrate;
@@ -221,7 +220,7 @@ async function splitVideo(inputPath, targetSizeKB) {
     const segmentDuration = videoInfo.duration / totalParts;
     
     const parts = [];
-    const audioBitrate = 64; // kbps
+    const audioBitrate = 32; // kbps (최대한 압축)
     
     // 각 구간별로 분할
     for (let i = 0; i < totalParts; i++) {
@@ -229,32 +228,31 @@ async function splitVideo(inputPath, targetSizeKB) {
       const timestamp = Date.now() + i;
       let outputPath = path.join(outputDir, `split_${timestamp}_${baseFileName}_part${i + 1}${outputExt}`);
       
-      // 목표 비트레이트 계산 (85%로 설정하여 목표 크기 내 도달 보장)
+      // 목표 비트레이트 계산 (40%로 강하게 설정하여 목표 크기 확실히 달성)
       const targetBitratePerPart = Math.floor((targetSizeKB * 8) / segmentDuration);
-      let currentBitrate = Math.max(Math.floor((targetBitratePerPart - audioBitrate) * 0.85), 64);
+      let currentBitrate = Math.max(Math.floor((targetBitratePerPart - audioBitrate) * 0.4), 32);
       
       let partSizeKB;
       
       if (isWebM) {
-        // WebM: VP9 1-pass VBR 인코딩 (빠른 속도 + 정확한 크기 제어)
-        console.log(`파트 ${i + 1} VP9 VBR 인코딩 시작 - 목표 비트레이트: ${currentBitrate}kbps`);
+        // WebM: VP8 초고속 인코딩 (품질 희생 + 확실한 크기 달성)
+        console.log(`파트 ${i + 1} VP8 초고속 인코딩 시작 - 목표 비트레이트: ${currentBitrate}kbps`);
         
         await new Promise((resolve, reject) => {
           ffmpeg(inputPath)
             .setStartTime(segmentStartTime)
             .setDuration(segmentDuration)
             .outputOptions([
-              '-c:v libvpx-vp9',
+              '-c:v libvpx',
               '-c:a libvorbis',
               '-b:v ' + currentBitrate + 'k',
               '-maxrate ' + currentBitrate + 'k',
-              '-bufsize ' + (currentBitrate * 2) + 'k',
+              '-bufsize ' + currentBitrate + 'k',
               '-b:a ' + audioBitrate + 'k',
-              '-cpu-used 6',
-              '-deadline good',
-              '-tile-columns 2',
-              '-tile-rows 1',
-              '-row-mt 1',
+              '-cpu-used 8',
+              '-deadline realtime',
+              '-qmin 30',
+              '-qmax 63',
               '-threads 0'
             ])
             .output(outputPath)

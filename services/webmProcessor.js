@@ -78,31 +78,30 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       const timestamp = Date.now() + i;
       let outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
       
-      // 각 세그먼트의 목표 비트레이트 계산 (85%로 설정하여 목표 크기 내 도달 보장)
+      // 각 세그먼트의 목표 비트레이트 계산 (40%로 강하게 설정하여 목표 크기 확실히 달성)
       const segmentTargetBitrate = Math.floor((targetSizeKB * 8) / segment.duration);
-      let currentBitrate = Math.max(Math.floor((segmentTargetBitrate - audioBitrate) * 0.85), 64);
+      let currentBitrate = Math.max(Math.floor((segmentTargetBitrate - audioBitrate) * 0.4), 32);
       
       let partSizeKB;
       
-      // WebM: VP9 1-pass VBR 인코딩 (빠른 속도 + 정확한 크기 제어)
-      console.log(`WebM 파트 ${i + 1} VP9 VBR 인코딩 시작 - 목표 비트레이트: ${currentBitrate}kbps`);
+      // WebM: VP8 초고속 인코딩 (품질 희생 + 확실한 크기 달성)
+      console.log(`WebM 파트 ${i + 1} VP8 초고속 인코딩 시작 - 목표 비트레이트: ${currentBitrate}kbps`);
       
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .setStartTime(segment.startTime)
           .setDuration(segment.duration)
           .outputOptions([
-            '-c:v libvpx-vp9',
+            '-c:v libvpx',
             '-c:a libvorbis',
             '-b:v ' + currentBitrate + 'k',
             '-maxrate ' + currentBitrate + 'k',
-            '-bufsize ' + (currentBitrate * 2) + 'k',
-            '-b:a ' + audioBitrate + 'k',
-            '-cpu-used 6',
-            '-deadline good',
-            '-tile-columns 2',
-            '-tile-rows 1',
-            '-row-mt 1',
+            '-bufsize ' + currentBitrate + 'k',
+            '-b:a 32k',
+            '-cpu-used 8',
+            '-deadline realtime',
+            '-qmin 30',
+            '-qmax 63',
             '-threads 0'
           ])
           .output(outputPath)
@@ -126,7 +125,7 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       const partStats = await fs.stat(outputPath);
       partSizeKB = (partStats.size / 1024).toFixed(2);
       
-      console.log(`WebM 파트 ${i + 1} VP9 인코딩 완료: ${partSizeKB}KB (목표: ${targetSizeKB}KB)`);
+      console.log(`WebM 파트 ${i + 1} VP8 인코딩 완료: ${partSizeKB}KB (목표: ${targetSizeKB}KB)`);
       
       parts.push({
         partNumber: i + 1,
