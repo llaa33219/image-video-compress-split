@@ -51,6 +51,22 @@ async function compressVideo(inputPath, targetSizeKB) {
     // 영상 정보 가져오기
     const videoInfo = await getVideoInfo(inputPath);
     
+    // 압축 비율에 따른 해상도 결정
+    const sizeRatio = parseFloat(originalSizeKB) / targetSizeKB;
+    const originalHeight = parseInt(videoInfo.resolution.split('x')[1]);
+    let scaleFilter = null;
+    
+    if (sizeRatio > 8 && originalHeight > 360) {
+      scaleFilter = 'scale=-2:360'; // 360p로 축소
+      console.log(`압축 비율 ${sizeRatio.toFixed(1)}x - 360p로 해상도 축소`);
+    } else if (sizeRatio > 4 && originalHeight > 480) {
+      scaleFilter = 'scale=-2:480'; // 480p로 축소
+      console.log(`압축 비율 ${sizeRatio.toFixed(1)}x - 480p로 해상도 축소`);
+    } else if (sizeRatio > 2 && originalHeight > 720) {
+      scaleFilter = 'scale=-2:720'; // 720p로 축소
+      console.log(`압축 비율 ${sizeRatio.toFixed(1)}x - 720p로 해상도 축소`);
+    }
+    
     // 목표 비트레이트 계산 (kbps) - 40%로 강하게 설정하여 목표 크기 확실히 달성
     const audioBitrate = 32; // kbps (최대한 압축)
     const totalTargetBitrate = Math.floor((targetSizeKB * 8) / videoInfo.duration);
@@ -66,8 +82,16 @@ async function compressVideo(inputPath, targetSizeKB) {
       
       console.log(`WebM VP8 초고속 인코딩 시작 - 목표 비트레이트: ${targetBitrate}kbps`);
       
+      // 비디오 필터 설정 (해상도 축소 + 프레임레이트 제한)
+      const videoFilters = [];
+      if (scaleFilter) {
+        videoFilters.push(scaleFilter);
+      }
+      videoFilters.push('fps=24'); // 24fps로 제한하여 용량 감소
+      
       await new Promise((resolve, reject) => {
-        ffmpeg(inputPath)
+        const command = ffmpeg(inputPath)
+          .videoFilters(videoFilters)
           .outputOptions([
             '-c:v libvpx',
             '-c:a libvorbis',
@@ -80,7 +104,9 @@ async function compressVideo(inputPath, targetSizeKB) {
             '-qmin 30',
             '-qmax 63',
             '-threads 0'
-          ])
+          ]);
+        
+        command
           .output(outputPath)
           .on('start', (cmd) => {
             console.log('인코딩 명령어:', cmd);
@@ -215,6 +241,22 @@ async function splitVideo(inputPath, targetSizeKB) {
       };
     }
     
+    // 압축 비율에 따른 해상도 결정
+    const sizeRatio = parseFloat(originalSizeKB) / targetSizeKB;
+    const originalHeight = parseInt(videoInfo.resolution.split('x')[1]);
+    let scaleFilter = null;
+    
+    if (sizeRatio > 8 && originalHeight > 360) {
+      scaleFilter = 'scale=-2:360'; // 360p로 축소
+      console.log(`압축 비율 ${sizeRatio.toFixed(1)}x - 360p로 해상도 축소`);
+    } else if (sizeRatio > 4 && originalHeight > 480) {
+      scaleFilter = 'scale=-2:480'; // 480p로 축소
+      console.log(`압축 비율 ${sizeRatio.toFixed(1)}x - 480p로 해상도 축소`);
+    } else if (sizeRatio > 2 && originalHeight > 720) {
+      scaleFilter = 'scale=-2:720'; // 720p로 축소
+      console.log(`압축 비율 ${sizeRatio.toFixed(1)}x - 720p로 해상도 축소`);
+    }
+    
     // 분할할 구간 수 계산
     const totalParts = Math.ceil(parseFloat(originalSizeKB) / targetSizeKB);
     const segmentDuration = videoInfo.duration / totalParts;
@@ -238,10 +280,18 @@ async function splitVideo(inputPath, targetSizeKB) {
         // WebM: VP8 초고속 인코딩 (품질 희생 + 확실한 크기 달성)
         console.log(`파트 ${i + 1} VP8 초고속 인코딩 시작 - 목표 비트레이트: ${currentBitrate}kbps`);
         
+        // 비디오 필터 설정 (해상도 축소 + 프레임레이트 제한)
+        const videoFilters = [];
+        if (scaleFilter) {
+          videoFilters.push(scaleFilter);
+        }
+        videoFilters.push('fps=24'); // 24fps로 제한하여 용량 감소
+        
         await new Promise((resolve, reject) => {
-          ffmpeg(inputPath)
+          const command = ffmpeg(inputPath)
             .setStartTime(segmentStartTime)
             .setDuration(segmentDuration)
+            .videoFilters(videoFilters)
             .outputOptions([
               '-c:v libvpx',
               '-c:a libvorbis',
@@ -254,7 +304,9 @@ async function splitVideo(inputPath, targetSizeKB) {
               '-qmin 30',
               '-qmax 63',
               '-threads 0'
-            ])
+            ]);
+          
+          command
             .output(outputPath)
             .on('start', (cmd) => {
               console.log(`파트 ${i + 1} 인코딩 명령어:`, cmd);

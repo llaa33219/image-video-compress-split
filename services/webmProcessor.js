@@ -71,7 +71,23 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
     // 각 세그먼트를 개별 파일로 분할
     const parts = [];
     const baseFileName = path.basename(inputPath, path.extname(inputPath));
-    const audioBitrate = 64; // kbps
+    const audioBitrate = 32; // kbps (최대한 압축)
+    
+    // 압축 비율에 따른 해상도 결정
+    const sizeRatio = parseFloat(originalSizeKB) / targetSizeKB;
+    const originalHeight = parseInt(webmInfo.resolution.split('x')[1]);
+    let scaleFilter = null;
+    
+    if (sizeRatio > 8 && originalHeight > 360) {
+      scaleFilter = 'scale=-2:360'; // 360p로 축소
+      console.log(`압축 비율 ${sizeRatio.toFixed(1)}x - 360p로 해상도 축소`);
+    } else if (sizeRatio > 4 && originalHeight > 480) {
+      scaleFilter = 'scale=-2:480'; // 480p로 축소
+      console.log(`압축 비율 ${sizeRatio.toFixed(1)}x - 480p로 해상도 축소`);
+    } else if (sizeRatio > 2 && originalHeight > 720) {
+      scaleFilter = 'scale=-2:720'; // 720p로 축소
+      console.log(`압축 비율 ${sizeRatio.toFixed(1)}x - 720p로 해상도 축소`);
+    }
     
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
@@ -87,10 +103,18 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       // WebM: VP8 초고속 인코딩 (품질 희생 + 확실한 크기 달성)
       console.log(`WebM 파트 ${i + 1} VP8 초고속 인코딩 시작 - 목표 비트레이트: ${currentBitrate}kbps`);
       
+      // 비디오 필터 설정 (해상도 축소 + 프레임레이트 제한)
+      const videoFilters = [];
+      if (scaleFilter) {
+        videoFilters.push(scaleFilter);
+      }
+      videoFilters.push('fps=24'); // 24fps로 제한하여 용량 감소
+      
       await new Promise((resolve, reject) => {
-        ffmpeg(inputPath)
+        const command = ffmpeg(inputPath)
           .setStartTime(segment.startTime)
           .setDuration(segment.duration)
+          .videoFilters(videoFilters)
           .outputOptions([
             '-c:v libvpx',
             '-c:a libvorbis',
@@ -103,7 +127,9 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
             '-qmin 30',
             '-qmax 63',
             '-threads 0'
-          ])
+          ]);
+        
+        command
           .output(outputPath)
           .on('start', (cmd) => {
             console.log(`WebM 파트 ${i + 1} 인코딩 명령어:`, cmd);
