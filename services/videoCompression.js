@@ -51,33 +51,34 @@ async function compressVideo(inputPath, targetSizeKB) {
     // 영상 정보 가져오기
     const videoInfo = await getVideoInfo(inputPath);
     
-    // 목표 비트레이트 계산 (kbps)
+    // 목표 비트레이트 계산 (kbps) - 85%로 설정하여 목표 크기 내 도달 보장
     const audioBitrate = 64; // kbps (용량 절약을 위해 낮춤)
     const totalTargetBitrate = Math.floor((targetSizeKB * 8) / videoInfo.duration);
-    const initialTargetBitrate = Math.max(totalTargetBitrate - audioBitrate, 64);
+    const initialTargetBitrate = Math.max(Math.floor((totalTargetBitrate - audioBitrate) * 0.85), 64);
     
     let outputPath = path.join(outputDir, `compressed_${Date.now()}_${baseFileName}${outputExt}`);
     let compressedSizeKB;
     let finalBitrate;
     
     if (isWebM) {
-      // WebM: VP9 1-pass CRF 인코딩 (빠른 속도 + 좋은 압축률)
+      // WebM: VP9 1-pass VBR 인코딩 (빠른 속도 + 정확한 크기 제어)
       const targetBitrate = initialTargetBitrate;
       
-      console.log(`WebM VP9 CRF 인코딩 시작 - 최대 비트레이트: ${targetBitrate}kbps`);
+      console.log(`WebM VP9 VBR 인코딩 시작 - 목표 비트레이트: ${targetBitrate}kbps`);
       
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .outputOptions([
             '-c:v libvpx-vp9',
             '-c:a libvorbis',
-            '-crf 32',
             '-b:v ' + targetBitrate + 'k',
             '-maxrate ' + targetBitrate + 'k',
             '-bufsize ' + (targetBitrate * 2) + 'k',
             '-b:a ' + audioBitrate + 'k',
-            '-cpu-used 4',
+            '-cpu-used 6',
             '-deadline good',
+            '-tile-columns 2',
+            '-tile-rows 1',
             '-row-mt 1',
             '-threads 0'
           ])
@@ -103,7 +104,7 @@ async function compressVideo(inputPath, targetSizeKB) {
       compressedSizeKB = (compressedStats.size / 1024).toFixed(2);
       finalBitrate = targetBitrate;
       
-      console.log(`WebM VP9 인코딩 완료: ${compressedSizeKB}KB (목표: ${targetSizeKB}KB)`);
+      console.log(`WebM VP9 VBR 인코딩 완료: ${compressedSizeKB}KB (목표: ${targetSizeKB}KB)`);
     } else {
       // MP4: 기존 1회 압축
       const targetBitrate = initialTargetBitrate;
@@ -228,15 +229,15 @@ async function splitVideo(inputPath, targetSizeKB) {
       const timestamp = Date.now() + i;
       let outputPath = path.join(outputDir, `split_${timestamp}_${baseFileName}_part${i + 1}${outputExt}`);
       
-      // 목표 비트레이트 계산
+      // 목표 비트레이트 계산 (85%로 설정하여 목표 크기 내 도달 보장)
       const targetBitratePerPart = Math.floor((targetSizeKB * 8) / segmentDuration);
-      let currentBitrate = Math.max(targetBitratePerPart - audioBitrate, 64);
+      let currentBitrate = Math.max(Math.floor((targetBitratePerPart - audioBitrate) * 0.85), 64);
       
       let partSizeKB;
       
       if (isWebM) {
-        // WebM: VP9 1-pass CRF 인코딩 (빠른 속도 + 좋은 압축률)
-        console.log(`파트 ${i + 1} VP9 CRF 인코딩 시작 - 최대 비트레이트: ${currentBitrate}kbps`);
+        // WebM: VP9 1-pass VBR 인코딩 (빠른 속도 + 정확한 크기 제어)
+        console.log(`파트 ${i + 1} VP9 VBR 인코딩 시작 - 목표 비트레이트: ${currentBitrate}kbps`);
         
         await new Promise((resolve, reject) => {
           ffmpeg(inputPath)
@@ -245,13 +246,14 @@ async function splitVideo(inputPath, targetSizeKB) {
             .outputOptions([
               '-c:v libvpx-vp9',
               '-c:a libvorbis',
-              '-crf 32',
               '-b:v ' + currentBitrate + 'k',
               '-maxrate ' + currentBitrate + 'k',
               '-bufsize ' + (currentBitrate * 2) + 'k',
               '-b:a ' + audioBitrate + 'k',
-              '-cpu-used 4',
+              '-cpu-used 6',
               '-deadline good',
+              '-tile-columns 2',
+              '-tile-rows 1',
               '-row-mt 1',
               '-threads 0'
             ])

@@ -78,14 +78,14 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
       const timestamp = Date.now() + i;
       let outputPath = path.join(outputDir, `webm_${timestamp}_${baseFileName}_part${i + 1}.webm`);
       
-      // 각 세그먼트의 목표 비트레이트 계산
+      // 각 세그먼트의 목표 비트레이트 계산 (85%로 설정하여 목표 크기 내 도달 보장)
       const segmentTargetBitrate = Math.floor((targetSizeKB * 8) / segment.duration);
-      let currentBitrate = Math.max(segmentTargetBitrate - audioBitrate, 64);
+      let currentBitrate = Math.max(Math.floor((segmentTargetBitrate - audioBitrate) * 0.85), 64);
       
       let partSizeKB;
       
-      // WebM: VP9 1-pass CRF 인코딩 (빠른 속도 + 좋은 압축률)
-      console.log(`WebM 파트 ${i + 1} VP9 CRF 인코딩 시작 - 최대 비트레이트: ${currentBitrate}kbps`);
+      // WebM: VP9 1-pass VBR 인코딩 (빠른 속도 + 정확한 크기 제어)
+      console.log(`WebM 파트 ${i + 1} VP9 VBR 인코딩 시작 - 목표 비트레이트: ${currentBitrate}kbps`);
       
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
@@ -94,13 +94,14 @@ async function detectWebMQualityChange(inputPath, targetSizeKB) {
           .outputOptions([
             '-c:v libvpx-vp9',
             '-c:a libvorbis',
-            '-crf 32',
             '-b:v ' + currentBitrate + 'k',
             '-maxrate ' + currentBitrate + 'k',
             '-bufsize ' + (currentBitrate * 2) + 'k',
             '-b:a ' + audioBitrate + 'k',
-            '-cpu-used 4',
+            '-cpu-used 6',
             '-deadline good',
+            '-tile-columns 2',
+            '-tile-rows 1',
             '-row-mt 1',
             '-threads 0'
           ])
